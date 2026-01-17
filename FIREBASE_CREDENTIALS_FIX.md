@@ -51,18 +51,7 @@ VITE_FIREBASE_APP_ID=<your_app_id>
 
 **File location:** `c:\Users\Frost\OneDrive\Desktop\PharmacyInventorySystem\Pharmacyinventorysystem\.env.local`
 
-Current values:
-
-```env
-VITE_FIREBASE_API_KEY=AIzaSyDoTa9EKPDI0NiQDoaovNs2TRbx8Ev_HDo
-VITE_FIREBASE_AUTH_DOMAIN=pharmacyinventorysystem-ed786.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=pharmacyinventorysystem-ed786
-VITE_FIREBASE_STORAGE_BUCKET=pharmacyinventorysystem-ed786.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=351022041996
-VITE_FIREBASE_APP_ID=1:351022041996:web:c3a2f19b41d7c6b46ca4a9
-```
-
----
+## Current values:
 
 ## ✅ Verify Firebase Setup
 
