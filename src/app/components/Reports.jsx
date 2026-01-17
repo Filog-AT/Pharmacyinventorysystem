@@ -15,11 +15,12 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'
 
 export function Reports({ medicines }) {
   const categoryData = medicines.reduce((acc, med) => {
-    const existing = acc.find(item => item.name === med.category);
+    const category = med.category || 'Uncategorized';
+    const existing = acc.find(item => item.name === category);
     if (existing) {
-      existing.value += med.quantity;
+      existing.value += (med.quantity || 0);
     } else {
-      acc.push({ name: med.category, value: med.quantity });
+      acc.push({ name: category, value: (med.quantity || 0) });
     }
     return acc;
   }, []);

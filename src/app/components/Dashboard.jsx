@@ -3,51 +3,88 @@ import { Plus, Search, Package, AlertTriangle, Calendar, TrendingUp } from 'luci
 import { MedicineCard } from '@/app/components/MedicineCard';
 import { MedicineForm } from '@/app/components/MedicineForm';
 import { StatsCard } from '@/app/components/StatsCard';
+import { auditService } from '@/services/auditService';
 
-export function Dashboard({ medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine }) {
+export function Dashboard({ medicines, onAddMedicine, onUpdateMedicine, onDeleteMedicine, currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [showForm, setShowForm] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState(undefined);
 
   const categories = useMemo(() => {
-    const cats = new Set(medicines.map(m => m.category));
+    const cats = new Set(medicines.map(m => m.category).filter(Boolean));
     return ['All', ...Array.from(cats)];
   }, [medicines]);
 
   const filteredMedicines = useMemo(() => {
     return medicines.filter(medicine => {
-      const matchesSearch = medicine.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           medicine.supplier.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = (medicine.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           (medicine.supplier || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = filterCategory === 'All' || medicine.category === filterCategory;
       return matchesSearch && matchesCategory;
     });
   }, [medicines, searchTerm, filterCategory]);
 
   const stats = useMemo(() => {
-    const totalItems = medicines.reduce((sum, m) => sum + m.quantity, 0);
-    const lowStock = medicines.filter(m => m.quantity <= m.minStockLevel).length;
+    const totalItems = medicines.reduce((sum, m) => sum + (m.quantity || 0), 0);
+    const lowStock = medicines.filter(m => m.quantity && m.minStockLevel && m.quantity <= m.minStockLevel).length;
     const expiringSoon = medicines.filter(m => {
+      if (!m.expiryDate) return false;
       const today = new Date();
       const expiryDate = new Date(m.expiryDate);
       const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       return daysUntilExpiry <= 90 && daysUntilExpiry > 0;
     }).length;
-    const totalValue = medicines.reduce((sum, m) => sum + (m.quantity * m.price), 0);
+    const totalValue = medicines.reduce((sum, m) => sum + ((m.quantity || 0) * (m.price || 0)), 0);
 
     return { totalItems, lowStock, expiringSoon, totalValue };
   }, [medicines]);
 
-  const handleAddMedicine = (medicineData) => {
+  const handleAddMedicine = async (medicineData) => {
     onAddMedicine(medicineData);
     setShowForm(false);
+    
+    // Log to audit trail
+    try {
+      await auditService.logAction({
+        userId: currentUser?.uid || 'unknown',
+        userName: currentUser?.name || 'Unknown User',
+        userRole: currentUser?.role || 'unknown',
+        action: 'MEDICINE_ADD',
+        entityType: 'medicine',
+        entityName: medicineData.name,
+        details: medicineData,
+      });
+    } catch (error) {
+      console.error('[Dashboard] Failed to log medicine add:', error);
+    }
   };
 
-  const handleUpdateMedicine = (medicineData) => {
+  const handleUpdateMedicine = async (medicineData) => {
     if (editingMedicine) {
       onUpdateMedicine(editingMedicine.id, medicineData);
       setEditingMedicine(undefined);
       setShowForm(false);
+      
+      // Log to audit trail
+      try {
+        await auditService.logAction({
+          userId: currentUser?.uid || 'unknown',
+          userName: currentUser?.name || 'Unknown User',
+          userRole: currentUser?.role || 'unknown',
+          action: 'MEDICINE_EDIT',
+          entityType: 'medicine',
+          entityId: editingMedicine.id,
+          entityName: medicineData.name,
+          details: medicineData,
+          changes: {
+            before: editingMedicine,
+            after: medicineData,
+          },
+        });
+      } catch (error) {
+        console.error('[Dashboard] Failed to log medicine edit:', error);
+      }
     }
   };
 
@@ -147,7 +184,28 @@ export function Dashboard({ medicines, onAddMedicine, onUpdateMedicine, onDelete
               key={medicine.id}
               medicine={medicine}
               onEdit={handleEditClick}
-              onDelete={onDeleteMedicine}
+              onDelete={async (id) => {
+                const medicineToDelete = medicines.find(m => m.id === id);
+                if (medicineToDelete) {
+                  onDeleteMedicine(id);
+                  
+                  // Log to audit trail
+                  try {
+                    await auditService.logAction({
+                      userId: currentUser?.uid || 'unknown',
+                      userName: currentUser?.name || 'Unknown User',
+                      userRole: currentUser?.role || 'unknown',
+                      action: 'MEDICINE_DELETE',
+                      entityType: 'medicine',
+                      entityId: id,
+                      entityName: medicineToDelete.name,
+                      details: medicineToDelete,
+                    });
+                  } catch (error) {
+                    console.error('[Dashboard] Failed to log medicine delete:', error);
+                  }
+                }
+              }}
             />
           ))}
         </div>

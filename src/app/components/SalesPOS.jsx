@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Search, Plus, Minus, ShoppingCart, X } from 'lucide-react';
+import { auditService } from '@/services/auditService';
 
-export function SalesPOS({ medicines }) {
+export function SalesPOS({ medicines, currentUser }) {
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
 
   const filteredMedicines = medicines.filter(m =>
-    m.name.toLowerCase().includes(searchTerm.toLowerCase())
+    (m.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const addToCart = (medicine) => {
@@ -35,12 +36,36 @@ export function SalesPOS({ medicines }) {
     setCart(cart.filter(item => item.medicine.id !== medicineId));
   };
 
-  const total = cart.reduce((sum, item) => sum + (item.medicine.price * item.quantity), 0);
+  const total = cart.reduce((sum, item) => sum + ((item.medicine.price || 0) * item.quantity), 0);
   const tax = total * 0.08; // 8% tax
   const grandTotal = total + tax;
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
+    
+    // Log each medicine sold to audit trail
+    try {
+      for (const item of cart) {
+        await auditService.logAction({
+          userId: currentUser?.uid || 'unknown',
+          userName: currentUser?.name || 'Unknown User',
+          userRole: currentUser?.role || 'unknown',
+          action: 'MEDICINE_SOLD',
+          entityType: 'sale',
+          entityId: item.medicine.id,
+          entityName: item.medicine.name,
+          details: {
+            quantity: item.quantity,
+            price: item.medicine.price,
+            totalPrice: (item.medicine.price || 0) * item.quantity,
+            customerName: customerName || 'Walk-in',
+          },
+        });
+      }
+    } catch (error) {
+      console.error('[SalesPOS] Failed to log sale:', error);
+    }
+    
     alert(`Sale completed!\nCustomer: ${customerName || 'Walk-in'}\nTotal: $${grandTotal.toFixed(2)}`);
     setCart([]);
     setCustomerName('');
@@ -78,13 +103,13 @@ export function SalesPOS({ medicines }) {
                 key={medicine.id}
                 onClick={() => addToCart(medicine)}
                 className="bg-white rounded-lg border-2 border-gray-200 p-4 hover:border-blue-500 hover:shadow-md transition-all text-left"
-                disabled={medicine.quantity === 0}
+                disabled={(medicine.quantity || 0) === 0}
               >
-                <h3 className="font-semibold text-sm mb-1 truncate">{medicine.name}</h3>
-                <p className="text-xs text-gray-500 mb-2">{medicine.category}</p>
+                <h3 className="font-semibold text-sm mb-1 truncate">{medicine.name || 'Unknown'}</h3>
+                <p className="text-xs text-gray-500 mb-2">{medicine.category || 'N/A'}</p>
                 <div className="flex justify-between items-center">
-                  <span className="text-blue-600 font-semibold">${medicine.price.toFixed(2)}</span>
-                  <span className="text-xs text-gray-500">{medicine.quantity} in stock</span>
+                  <span className="text-blue-600 font-semibold">${(medicine.price || 0).toFixed(2)}</span>
+                  <span className="text-xs text-gray-500">{medicine.quantity || 0} in stock</span>
                 </div>
               </button>
             ))}
@@ -117,8 +142,8 @@ export function SalesPOS({ medicines }) {
                   <div key={item.medicine.id} className="border-b pb-3">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
-                        <p className="font-medium text-sm">{item.medicine.name}</p>
-                        <p className="text-xs text-gray-500">${item.medicine.price.toFixed(2)} each</p>
+                        <p className="font-medium text-sm">{item.medicine.name || 'Unknown'}</p>
+                        <p className="text-xs text-gray-500">${(item.medicine.price || 0).toFixed(2)} each</p>
                       </div>
                       <button
                         onClick={() => removeFromCart(item.medicine.id)}
@@ -143,7 +168,7 @@ export function SalesPOS({ medicines }) {
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
-                      <span className="font-semibold">${(item.medicine.price * item.quantity).toFixed(2)}</span>
+                      <span className="font-semibold">${((item.medicine.price || 0) * item.quantity).toFixed(2)}</span>
                     </div>
                   </div>
                 ))

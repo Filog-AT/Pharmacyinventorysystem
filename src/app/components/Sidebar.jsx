@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderTree, ShoppingCart, Users, FileText, Bell, Settings, Menu, X } from 'lucide-react';
+import { LayoutDashboard, FolderTree, ShoppingCart, Users, FileText, Bell, Settings, Menu, X, LogOut, UserCircle } from 'lucide-react';
 import { SidebarItem } from '@/app/components/SidebarItem';
 
 const allMenuItems = [
@@ -11,8 +11,15 @@ const allMenuItems = [
   { id: 'settings', label: 'Settings', icon: Settings, roles: ['owner'] }
 ];
 
+const roleColors = {
+  owner: { bg: 'bg-red-100', text: 'text-red-700', badge: 'bg-red-500' },
+  pharmacist: { bg: 'bg-blue-100', text: 'text-blue-700', badge: 'bg-blue-500' },
+  staff: { bg: 'bg-green-100', text: 'text-green-700', badge: 'bg-green-500' }
+};
+
 export function Sidebar({ activePage, onPageChange, isOpen, onToggle, userRole, userName, onLogout }) {
   const menuItems = allMenuItems.filter(item => item.roles.includes(userRole));
+  const roleColor = roleColors[userRole] || roleColors.staff;
 
   return (
     <>
@@ -46,9 +53,18 @@ export function Sidebar({ activePage, onPageChange, isOpen, onToggle, userRole, 
           </div>
 
           {/* User Info */}
-          <div className="p-4 border-b border-gray-200 bg-blue-50">
-            <p className="text-sm font-medium text-gray-900">{userName}</p>
-            <p className="text-xs text-gray-600 capitalize">{userRole}</p>
+          <div className={`p-4 border-b border-gray-200 ${roleColor.bg}`}>
+            <div className="flex items-start gap-3">
+              <div className={`${roleColor.badge} rounded-full p-2 text-white`}>
+                <UserCircle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{userName}</p>
+                <span className={`inline-block text-xs font-semibold px-2 py-1 rounded-full mt-1 capitalize ${roleColor.text} ${roleColor.bg}`}>
+                  {userRole}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Menu Items */}
@@ -70,11 +86,12 @@ export function Sidebar({ activePage, onPageChange, isOpen, onToggle, userRole, 
           </nav>
 
           {/* Footer */}
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-gray-200 space-y-2">
             <button
               onClick={onLogout}
-              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-md transition-colors font-medium text-sm"
+              className="w-full flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 py-2 px-4 rounded-md transition-colors font-medium text-sm border border-red-200"
             >
+              <LogOut className="w-4 h-4" />
               Sign Out
             </button>
           </div>

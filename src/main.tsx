@@ -1,7 +1,16 @@
 
+
   import { createRoot } from "react-dom/client";
-  import App from "./app/App.tsx";
+  import AppSimple from "./app/AppSimple.tsx";
   import "./styles/index.css";
 
-  createRoot(document.getElementById("root")!).render(<App />);
+  console.log('[main.tsx] Starting Pharmacy System...');
+  const root = document.getElementById("root");
+  if (!root) {
+    console.error('[main.tsx] Root element not found!');
+  } else {
+    console.log('[main.tsx] Root element found, rendering app');
+    createRoot(root).render(<AppSimple />);
+  }
+  
   

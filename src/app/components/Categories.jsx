@@ -9,13 +9,14 @@ export function Categories({ medicines }) {
     const stats = new Map();
     
     medicines.forEach(med => {
-      if (!stats.has(med.category)) {
-        stats.set(med.category, { count: 0, totalValue: 0, lowStock: 0 });
+      const category = med.category || 'Uncategorized';
+      if (!stats.has(category)) {
+        stats.set(category, { count: 0, totalValue: 0, lowStock: 0 });
       }
-      const cat = stats.get(med.category);
-      cat.count += med.quantity;
-      cat.totalValue += med.quantity * med.price;
-      if (med.quantity <= med.minStockLevel) {
+      const cat = stats.get(category);
+      cat.count += (med.quantity || 0);
+      cat.totalValue += (med.quantity || 0) * (med.price || 0);
+      if ((med.quantity || 0) <= (med.minStockLevel || 0)) {
         cat.lowStock += 1;
       }
     });
@@ -23,7 +24,7 @@ export function Categories({ medicines }) {
     return Array.from(stats.entries()).map(([name, data]) => ({
       name,
       ...data,
-      items: medicines.filter(m => m.category === name).length
+      items: medicines.filter(m => (m.category || 'Uncategorized') === name).length
     }));
   }, [medicines]);
 

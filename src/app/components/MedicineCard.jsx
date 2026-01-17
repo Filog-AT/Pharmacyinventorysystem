@@ -1,6 +1,11 @@
 import { Package, Calendar, AlertTriangle, Edit, Trash2 } from 'lucide-react';
 
 export function MedicineCard({ medicine, onEdit, onDelete }) {
+  // Safety check for medicine object
+  if (!medicine || !medicine.id) {
+    return null;
+  }
+
   const isExpiringSoon = () => {
     const today = new Date();
     const expiryDate = new Date(medicine.expiryDate);
@@ -14,7 +19,7 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
     return expiryDate < today;
   };
 
-  const isLowStock = medicine.quantity <= medicine.minStockLevel;
+  const isLowStock = medicine.quantity && medicine.minStockLevel && medicine.quantity <= medicine.minStockLevel;
 
   const getStockStatusColor = () => {
     if (isExpired()) return 'bg-red-100 text-red-800 border-red-200';
@@ -56,7 +61,7 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-sm">
           <Package className="w-4 h-4" />
-          <span className="font-medium">Stock: {medicine.quantity} {medicine.unit}</span>
+          <span className="font-medium">Stock: {medicine.quantity || 0} {medicine.unit || 'units'}</span>
           {isLowStock && (
             <span className="ml-auto flex items-center gap-1 text-xs">
               <AlertTriangle className="w-3 h-3" />
@@ -67,7 +72,7 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
 
         <div className="flex items-center gap-2 text-sm">
           <Calendar className="w-4 h-4" />
-          <span>Expires: {formatDate(medicine.expiryDate)}</span>
+          <span>Expires: {medicine.expiryDate ? formatDate(medicine.expiryDate) : 'N/A'}</span>
           {isExpired() && (
             <span className="ml-auto flex items-center gap-1 text-xs font-medium">
               <AlertTriangle className="w-3 h-3" />
@@ -80,11 +85,11 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
         </div>
 
         <div className="text-sm pt-2 border-t border-current/20">
-          <span className="opacity-75">Supplier:</span> <span className="font-medium">{medicine.supplier}</span>
+          <span className="opacity-75">Supplier:</span> <span className="font-medium">{medicine.supplier || 'N/A'}</span>
         </div>
 
         <div className="text-sm">
-          <span className="opacity-75">Price:</span> <span className="font-medium">${medicine.price.toFixed(2)}</span>
+          <span className="opacity-75">Price:</span> <span className="font-medium">${(medicine.price || 0).toFixed(2)}</span>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
-import { User, Building2, Bell, Lock, Globe, Palette } from 'lucide-react';
+import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen } from 'lucide-react';
 
-export function Settings() {
+export function Settings({ userRole, onNavigateToTab }) {
   return (
     <div>
       {/* Header */}
@@ -10,6 +10,45 @@ export function Settings() {
       </div>
 
       <div className="space-y-6">
+        {/* Owner-Only Section: User & Audit Management */}
+        {userRole === 'owner' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* User Management */}
+            <div className="bg-white rounded-lg border-2 border-blue-200 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => onNavigateToTab && onNavigateToTab('user-management')}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Shield className="w-6 h-6 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
+              </div>
+              <p className="text-gray-600 text-sm mb-4">
+                Add, edit, and manage pharmacy staff accounts and their roles
+              </p>
+              <button className="text-blue-600 hover:text-blue-700 font-medium text-sm">
+                Manage Users →
+              </button>
+            </div>
+
+            {/* Audit Log */}
+            <div className="bg-white rounded-lg border-2 border-purple-200 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => onNavigateToTab && onNavigateToTab('audit-log')}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <BookOpen className="w-6 h-6 text-purple-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Activity Audit Log</h3>
+              </div>
+              <p className="text-gray-600 text-sm mb-4">
+                Track who did what, when. View all activities performed in the system
+              </p>
+              <button className="text-purple-600 hover:text-purple-700 font-medium text-sm">
+                View Audit Log →
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Pharmacy Information */}
         <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
           <div className="flex items-center gap-3 mb-4">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Lock, Building2 } from 'lucide-react';
+import { User, Lock, Building2, Eye, EyeOff } from 'lucide-react';
 
 const users = [
   {
@@ -7,21 +7,24 @@ const users = [
     password: 'owner123',
     role: 'owner',
     name: 'John Smith',
-    title: 'Owner'
+    title: 'Owner',
+    permissions: ['Full access', 'Reports', 'Settings', 'All inventory']
   },
   {
     username: 'pharmacist',
     password: 'pharmacist123',
     role: 'pharmacist',
     name: 'Sarah Johnson',
-    title: 'Pharmacist'
+    title: 'Pharmacist',
+    permissions: ['Dashboard', 'Sales', 'Reports', 'Inventory management']
   },
   {
     username: 'staff',
     password: 'staff123',
     role: 'staff',
     name: 'Mike Wilson',
-    title: 'Staff Member'
+    title: 'Staff Member',
+    permissions: ['Dashboard', 'Sales', 'View inventory', 'View notifications']
   }
 ];
 
@@ -30,6 +33,7 @@ export function Login({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showCredentials, setShowCredentials] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -47,6 +51,7 @@ export function Login({ onLogin }) {
   const handleQuickLogin = (user) => {
     setUsername(user.username);
     setPassword(user.password);
+    setError('');
   };
 
   return (
@@ -97,14 +102,21 @@ export function Login({ onLogin }) {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-10 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
@@ -130,29 +142,44 @@ export function Login({ onLogin }) {
         {/* Demo Credentials */}
         {showCredentials && (
           <div className="mt-4 bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Login Options:</h3>
-            <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-gray-900 mb-4">Demo Accounts (Click to fill credentials):</h3>
+            <div className="space-y-3">
               {users.map((user) => (
                 <button
                   key={user.username}
                   onClick={() => handleQuickLogin(user)}
-                  className="w-full text-left p-3 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+                  className="w-full text-left p-4 border-2 border-gray-200 rounded-md hover:border-blue-500 hover:bg-blue-50 transition-all group"
                 >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-medium text-gray-900">{user.name}</p>
-                      <p className="text-sm text-gray-500">{user.title}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400">Username: {user.username}</p>
-                      <p className="text-xs text-gray-400">Password: {user.password}</p>
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-semibold text-gray-900 group-hover:text-blue-600">{user.name}</p>
+                        <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700 capitalize">
+                          {user.role}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500 mb-2">{user.title}</p>
+                      <div className="text-xs text-gray-600">
+                        <p><strong>Username:</strong> {user.username}</p>
+                        <p><strong>Password:</strong> {user.password}</p>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="text-xs font-medium text-gray-700 mb-1">Permissions:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {user.permissions.map((perm, idx) => (
+                            <span key={idx} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                              {perm}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-3 text-center">
-              Click on a user to auto-fill credentials, then click Sign In
+            <p className="text-xs text-gray-500 mt-4 text-center">
+              Click any account to auto-fill credentials, then click Sign In
             </p>
           </div>
         )}

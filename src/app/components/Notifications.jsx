@@ -6,40 +6,44 @@ export function Notifications({ medicines }) {
     const today = new Date();
 
     medicines.forEach(med => {
+      if (!med || !med.id) return; // Skip invalid medicines
+
       // Low stock notifications
-      if (med.quantity <= med.minStockLevel) {
+      if ((med.quantity || 0) <= (med.minStockLevel || 0)) {
         notifications.push({
           id: `low-${med.id}`,
           type: 'warning',
           title: 'Low Stock Alert',
-          message: `${med.name} is running low. Current stock: ${med.quantity} ${med.unit}`,
+          message: `${med.name || 'Unknown medicine'} is running low. Current stock: ${med.quantity || 0} ${med.unit || 'units'}`,
           time: '2 hours ago',
           read: false
         });
       }
 
       // Expiry notifications
-      const expiryDate = new Date(med.expiryDate);
-      const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilExpiry < 0) {
-        notifications.push({
-          id: `expired-${med.id}`,
-          type: 'error',
-          title: 'Expired Medicine',
-          message: `${med.name} has expired. Please remove from inventory.`,
-          time: '1 day ago',
-          read: false
-        });
-      } else if (daysUntilExpiry <= 30) {
-        notifications.push({
-          id: `expiring-${med.id}`,
-          type: 'warning',
-          title: 'Expiring Soon',
-          message: `${med.name} will expire in ${daysUntilExpiry} days.`,
-          time: '3 hours ago',
-          read: false
-        });
+      if (med.expiryDate) {
+        const expiryDate = new Date(med.expiryDate);
+        const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysUntilExpiry < 0) {
+          notifications.push({
+            id: `expired-${med.id}`,
+            type: 'error',
+            title: 'Expired Medicine',
+            message: `${med.name || 'Unknown medicine'} has expired. Please remove from inventory.`,
+            time: '1 day ago',
+            read: false
+          });
+        } else if (daysUntilExpiry <= 30) {
+          notifications.push({
+            id: `expiring-${med.id}`,
+            type: 'warning',
+            title: 'Expiring Soon',
+            message: `${med.name || 'Unknown medicine'} will expire in ${daysUntilExpiry} days.`,
+            time: '3 hours ago',
+            read: false
+          });
+        }
       }
     });
 
