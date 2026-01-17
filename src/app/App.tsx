@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Login } from '@/app/components/Login';
 import { Sidebar } from '@/app/components/Sidebar';
 import { Dashboard } from '@/app/components/Dashboard';
 import { Categories } from '@/app/components/Categories';
@@ -79,9 +80,22 @@ const initialMedicines = [
 ];
 
 function App() {
+  const [currentUser, setCurrentUser] = useState(null);
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [medicines, setMedicines] = useState(initialMedicines);
+
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    setActivePage('dashboard');
+  };
+
+  const handleLogout = () => {
+    if (confirm('Are you sure you want to sign out?')) {
+      setCurrentUser(null);
+      setActivePage('dashboard');
+    }
+  };
 
   const handleAddMedicine = (medicineData) => {
     const newMedicine = {
@@ -138,6 +152,11 @@ function App() {
     }
   };
 
+  // Show login page if not authenticated
+  if (!currentUser) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar
@@ -145,6 +164,9 @@ function App() {
         onPageChange={setActivePage}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
+        userRole={currentUser.role}
+        userName={currentUser.name}
+        onLogout={handleLogout}
       />
       <main className="lg:ml-64 p-6">
         {renderPage()}
