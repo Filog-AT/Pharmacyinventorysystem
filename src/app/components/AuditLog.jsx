@@ -18,6 +18,7 @@ export function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [filteredLogs, setFilteredLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [showDetails, setShowDetails] = useState({});
   const [filters, setFilters] = useState({
     action: '',
@@ -27,7 +28,6 @@ export function AuditLog() {
     searchTerm: '',
   });
 
-  // Mock loading logs - replace with actual Firebase call later
   useEffect(() => {
     loadLogs();
   }, []);
@@ -39,14 +39,37 @@ export function AuditLog() {
   const loadLogs = async () => {
     setLoading(true);
     try {
-      // TODO: Call auditService.getLogs()
-      console.log('[AuditLog] Loading logs from Firebase');
-      // For now, just set empty
-      setLogs([]);
+      const fetched = await auditService.getLogs({ limit: 200 });
+      const normalized = fetched.map(l => {
+        const ts = l.timestamp;
+        const date =
+          ts && typeof ts.toDate === 'function'
+            ? ts.toDate()
+            : ts instanceof Date
+            ? ts
+            : ts
+            ? new Date(ts)
+            : new Date();
+        return { ...l, timestamp: date };
+      });
+      setLogs(normalized);
     } catch (error) {
       console.error('[AuditLog] Error loading logs:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const clearLogs = async () => {
+    if (!confirm('Clear all activity logs? This cannot be undone.')) return;
+    setClearing(true);
+    try {
+      await auditService.clearAllLogs();
+      await loadLogs();
+    } catch (error) {
+      console.error('[AuditLog] Error clearing logs:', error);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -148,24 +171,45 @@ export function AuditLog() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Activity Audit Log</h2>
-        <p className="text-gray-600">Track all actions performed in the system</p>
+        <h2 className="text-2xl font-bold text-foreground mb-2">Activity Audit Log</h2>
+        <p className="text-muted-foreground">Track all actions performed in the system</p>
       </div>
 
+      {/* Top Stats */}
+      {filteredLogs.length > 0 && (
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-card rounded-lg border p-4">
+            <p className="text-sm text-muted-foreground mb-1">Total Activities</p>
+            <p className="text-2xl font-bold text-card-foreground">{filteredLogs.length}</p>
+          </div>
+          <div className="bg-card rounded-lg border p-4">
+            <p className="text-sm text-muted-foreground mb-1">Medicines Sold</p>
+            <p className="text-2xl font-bold text-card-foreground">{filteredLogs.filter(l => l.action === 'MEDICINE_SOLD').length}</p>
+          </div>
+          <div className="bg-card rounded-lg border p-4">
+            <p className="text-sm text-muted-foreground mb-1">Changes Made</p>
+            <p className="text-2xl font-bold text-card-foreground">
+              {filteredLogs.filter(l => ['MEDICINE_ADD', 'MEDICINE_EDIT', 'MEDICINE_DELETE', 'PHARMACY_EDIT'].includes(l.action)).length}
+            </p>
+          </div>
+        </div>
+      )
+      }
+
       {/* Filters */}
-      <div className="mb-6 bg-white rounded-lg shadow-sm p-6">
+      <div className="mb-6 bg-card rounded-lg border p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-gray-600" />
-          <h3 className="font-semibold text-gray-900">Filters</h3>
+          <Filter className="w-5 h-5 text-muted-foreground" />
+          <h3 className="font-semibold text-card-foreground">Filters</h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Action</label>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">Action</label>
             <select
               value={filters.action}
               onChange={(e) => setFilters({ ...filters, action: e.target.value })}
-              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
             >
               <option value="">All Actions</option>
               {Object.entries(actionColors).map(([key, value]) => (
@@ -175,33 +219,32 @@ export function AuditLog() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">Start Date</label>
             <input
               type="date"
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">End Date</label>
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">Search</label>
             <input
               type="text"
               value={filters.searchTerm}
               onChange={(e) => setFilters({ ...filters, searchTerm: e.target.value })}
-              placeholder="User, entity, customer..."
-              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
             />
           </div>
 
@@ -222,28 +265,36 @@ export function AuditLog() {
               <Download className="w-4 h-4" />
               CSV
             </button>
+            <button
+              onClick={clearLogs}
+              disabled={loading || clearing}
+              className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-50"
+              title="Clear all logs"
+            >
+              {clearing ? 'Clearing…' : 'Clear Logs'}
+            </button>
           </div>
         </div>
       </div>
 
       {/* Logs Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-card rounded-lg border overflow-hidden">
         {filteredLogs.length === 0 ? (
           <div className="p-12 text-center">
-            <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No activity logs yet</p>
-            <p className="text-gray-400 text-sm mt-2">Activities will appear here as they happen</p>
+            <Calendar className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground text-lg">No activity logs yet</p>
+            <p className="text-muted-foreground text-sm mt-2">Activities will appear here as they happen</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-muted border-b">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Timestamp</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">User</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Action</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Entity</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Details</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-card-foreground">Timestamp</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-card-foreground">User</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-card-foreground">Action</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-card-foreground">Entity</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-card-foreground">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -252,22 +303,22 @@ export function AuditLog() {
                   const isDetailsShown = showDetails[log.id];
 
                   return (
-                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                    <tr key={log.id} className="hover:bg-muted transition-colors">
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
                         {getTimestampString(log.timestamp)}
                       </td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                      <td className="px-6 py-4 text-sm font-medium text-card-foreground">
                         <div>{log.userName}</div>
-                        <div className="text-xs text-gray-500 capitalize">{log.userRole}</div>
+                        <div className="text-xs text-muted-foreground capitalize">{log.userRole}</div>
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${actionConfig?.bg} ${actionConfig?.text}`}>
                           {actionConfig?.label || log.action}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
                         <div>{log.entityName || '—'}</div>
-                        <div className="text-xs text-gray-500 capitalize">{log.entityType}</div>
+                        <div className="text-xs text-muted-foreground capitalize">{log.entityType}</div>
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <button
@@ -287,14 +338,14 @@ export function AuditLog() {
             {/* Details Rows */}
             {filteredLogs.map((log) => (
               showDetails[log.id] && (
-                <div key={`details-${log.id}`} className="border-t bg-blue-50 p-6">
+                <div key={`details-${log.id}`} className="border-t bg-muted p-6">
                   <div className="max-w-4xl">
-                    <h4 className="font-semibold text-gray-900 mb-3">Details</h4>
+                    <h4 className="font-semibold text-card-foreground mb-3">Details</h4>
                     
                     {log.details && Object.keys(log.details).length > 0 && (
                       <div className="mb-4">
-                        <h5 className="text-sm font-medium text-gray-700 mb-2">Changes Made:</h5>
-                        <div className="bg-white rounded border border-blue-200 p-3 text-sm">
+                        <h5 className="text-sm font-medium text-muted-foreground mb-2">Changes Made:</h5>
+                        <div className="bg-card rounded border p-3 text-sm">
                           <pre className="overflow-x-auto text-xs">
                             {JSON.stringify(log.details, null, 2)}
                           </pre>
@@ -304,7 +355,7 @@ export function AuditLog() {
 
                     {log.changes && (
                       <div>
-                        <h5 className="text-sm font-medium text-gray-700 mb-2">Before & After:</h5>
+                        <h5 className="text-sm font-medium text-muted-foreground mb-2">Before & After:</h5>
                         <div className="grid grid-cols-2 gap-4">
                           {log.changes.before && (
                             <div className="bg-red-50 rounded border border-red-200 p-3">
@@ -333,29 +384,7 @@ export function AuditLog() {
         )}
       </div>
 
-      {/* Stats */}
-      {filteredLogs.length > 0 && (
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <p className="text-sm text-gray-600 mb-1">Total Activities</p>
-            <p className="text-2xl font-bold text-gray-900">{filteredLogs.length}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <p className="text-sm text-gray-600 mb-1">Unique Users</p>
-            <p className="text-2xl font-bold text-gray-900">{new Set(filteredLogs.map(l => l.userId)).size}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <p className="text-sm text-gray-600 mb-1">Medicines Sold</p>
-            <p className="text-2xl font-bold text-gray-900">{filteredLogs.filter(l => l.action === 'MEDICINE_SOLD').length}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <p className="text-sm text-gray-600 mb-1">Changes Made</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {filteredLogs.filter(l => ['MEDICINE_ADD', 'MEDICINE_EDIT', 'MEDICINE_DELETE'].includes(l.action)).length}
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Bottom stats removed as per request */}
     </div>
   );
 }

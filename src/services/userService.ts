@@ -15,7 +15,7 @@ export interface PharmacyUser {
   id?: string;
   username: string;
   name: string;
-  role: 'owner' | 'pharmacist' | 'staff';
+  role: 'manager' | 'staff';
   title: string;
   email?: string;
   createdAt?: Date;

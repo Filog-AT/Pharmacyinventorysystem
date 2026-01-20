@@ -80,7 +80,7 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
             </span>
           )}
           {isExpiringSoon() && !isExpired() && (
-            <span className="ml-auto text-xs">Expiring Soon</span>
+            <span className="ml-auto text-xs">Almost Expire</span>
           )}
         </div>
 
@@ -89,7 +89,7 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
         </div>
 
         <div className="text-sm">
-          <span className="opacity-75">Price:</span> <span className="font-medium">${(medicine.price || 0).toFixed(2)}</span>
+          <span className="opacity-75">Price:</span> <span className="font-medium">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(medicine.price || 0)}</span>
         </div>
       </div>
     </div>

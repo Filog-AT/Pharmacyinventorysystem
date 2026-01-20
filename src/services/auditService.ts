@@ -7,10 +7,12 @@ import {
   orderBy,
   limit,
   Timestamp,
+  deleteDoc,
+  doc,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 
-export type AuditActionType = 'MEDICINE_ADD' | 'MEDICINE_EDIT' | 'MEDICINE_DELETE' | 'MEDICINE_SOLD' | 'USER_ADD' | 'USER_EDIT' | 'USER_DELETE' | 'LOGIN' | 'LOGOUT';
+export type AuditActionType = 'MEDICINE_ADD' | 'MEDICINE_EDIT' | 'MEDICINE_DELETE' | 'MEDICINE_SOLD' | 'USER_ADD' | 'USER_EDIT' | 'USER_DELETE' | 'LOGIN' | 'LOGOUT' | 'PHARMACY_EDIT';
 
 export interface AuditLog {
   id?: string;
@@ -19,7 +21,7 @@ export interface AuditLog {
   userName: string;
   userRole: string;
   action: AuditActionType;
-  entityType: 'medicine' | 'user' | 'sale' | 'auth';
+  entityType: 'medicine' | 'user' | 'sale' | 'auth' | 'pharmacy';
   entityId?: string;
   entityName?: string;
   details: Record<string, any>;
@@ -240,5 +242,15 @@ export const auditService = {
         customerName: customerName || 'Walk-in',
       },
     });
+  },
+
+  // Danger: Clear all logs
+  async clearAllLogs(): Promise<void> {
+    const snap = await getDocs(collection(db, AUDIT_LOGS_COLLECTION));
+    const deletions: Promise<void>[] = [];
+    snap.forEach((d) => {
+      deletions.push(deleteDoc(doc(db, AUDIT_LOGS_COLLECTION, d.id)));
+    });
+    await Promise.all(deletions);
   },
 };

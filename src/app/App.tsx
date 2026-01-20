@@ -1,18 +1,18 @@
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
-import { Categories } from './components/Categories';
-import { SalesPOS } from './components/SalesPOS';
+import { Inventory } from './components/Inventory';
 import { Customers } from './components/Customers';
 import { Reports } from './components/Reports';
 import { Notifications } from './components/Notifications';
 import { Settings } from './components/Settings';
-import { UserManagement } from './components/UserManagement';
-import { AuditLog } from './components/AuditLog';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { OrdersSuppliers } from './components/OrdersSuppliers';
 import { useMedicineStore } from '@/store/medicineStore';
 import { medicineService } from '@/services/medicineService';
+import { categoryService } from '@/services/categoryService';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
@@ -100,6 +100,44 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [error, setAppError] = useState<string | null>(null);
+  const [categories, setCategories] = useState([
+    'Antibiotic',
+    'Painkiller',
+    'Antiviral',
+    'Antihistamine',
+    'Cardiovascular',
+    'Diabetes',
+    'Respiratory',
+    'Gastrointestinal',
+    'Dermatological',
+    'Vitamins & Supplements',
+    'Other'
+  ]);
+
+  // Load categories from Firestore on mount
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const firebaseCategories = await categoryService.getCategories();
+        if (firebaseCategories.length === 0) {
+          const defaults = [
+            'Antibiotic','Painkiller','Antiviral','Antihistamine','Cardiovascular','Diabetes','Respiratory','Gastrointestinal','Dermatological','Vitamins & Supplements','Other'
+          ];
+          for (const name of defaults) {
+            try { await categoryService.addCategory(name); } catch {}
+          }
+          const populated = await categoryService.getCategories();
+          setCategories(populated.map(c => c.name));
+        } else {
+          setCategories(firebaseCategories.map(c => c.name));
+        }
+      } catch (e) {
+        console.warn('[App] Failed to load categories from Firestore:', e);
+        // keep default local categories
+      }
+    };
+    loadCategories();
+  }, []);
 
   // Get store functions
   const { medicines, setMedicines, addMedicine, updateMedicine, deleteMedicine, setError } = useMedicineStore();
@@ -177,8 +215,15 @@ function App() {
     }
   }, []);
 
-  const handleLogin = (user: CurrentUser) => {
-    setCurrentUser(user);
+  const handleLogin = (user: any) => {
+    // Ensure user has all required properties
+    const appUser: CurrentUser = {
+      uid: user.uid || user.username || 'mock-uid',
+      email: user.email || (user.username ? `${user.username}@example.com` : null),
+      name: user.name,
+      role: user.role
+    };
+    setCurrentUser(appUser);
     setActivePage('dashboard');
   };
 
@@ -186,6 +231,25 @@ function App() {
     if (confirm('Are you sure you want to sign out?')) {
       setCurrentUser(null);
       setActivePage('dashboard');
+    }
+  };
+
+  const handleAddCategory = async (newCategory: string) => {
+    if (!categories.includes(newCategory)) {
+      try {
+        await categoryService.addCategory(newCategory);
+        setCategories(prev => [...prev, newCategory]);
+      } catch (e) {
+        console.error('Failed to add category:', e);
+      }
+    }
+  };
+  const handleDeleteCategory = async (categoryName: string) => {
+    try {
+      await categoryService.deleteCategoryByName(categoryName);
+      setCategories(prev => prev.filter(c => c !== categoryName));
+    } catch (e) {
+      console.error('Failed to delete category:', e);
     }
   };
 
@@ -233,16 +297,26 @@ function App() {
         return (
           <Dashboard
             medicines={medicines}
+            categories={categories}
             onAddMedicine={handleAddMedicine}
             onUpdateMedicine={handleUpdateMedicine}
             onDeleteMedicine={handleDeleteMedicine}
             currentUser={currentUser}
           />
         );
-      case 'categories':
-        return <Categories medicines={medicines} />;
-      case 'sales':
-        return <SalesPOS medicines={medicines} currentUser={currentUser} />;
+      case 'inventory':
+        return (
+          <Inventory
+            medicines={medicines}
+            categories={categories}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onAddMedicine={handleAddMedicine}
+            onUpdateMedicine={handleUpdateMedicine}
+            onDeleteMedicine={handleDeleteMedicine}
+            currentUser={currentUser}
+          />
+        );
       case 'customers':
         return <Customers />;
       case 'reports':
@@ -251,14 +325,13 @@ function App() {
         return <Notifications medicines={medicines} />;
       case 'settings':
         return <Settings userRole={currentUser?.role} onNavigateToTab={setActivePage} />;
-      case 'user-management':
-        return currentUser?.role === 'owner' ? <UserManagement currentUser={currentUser} /> : null;
-      case 'audit-log':
-        return currentUser?.role === 'owner' ? <AuditLog /> : null;
+      case 'orders':
+        return <OrdersSuppliers />;
       default:
         return (
           <Dashboard
             medicines={medicines}
+            categories={categories}
             onAddMedicine={handleAddMedicine}
             onUpdateMedicine={handleUpdateMedicine}
             onDeleteMedicine={handleDeleteMedicine}
@@ -323,7 +396,9 @@ function App() {
         onLogout={handleLogout}
       />
       <main className="lg:ml-64 p-6">
-        {renderPage()}
+        <ErrorBoundary>
+          {renderPage()}
+        </ErrorBoundary>
       </main>
     </div>
   );

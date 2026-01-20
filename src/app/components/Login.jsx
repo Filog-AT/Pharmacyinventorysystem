@@ -3,20 +3,12 @@ import { User, Lock, Building2, Eye, EyeOff } from 'lucide-react';
 
 const users = [
   {
-    username: 'owner',
-    password: 'owner123',
-    role: 'owner',
+    username: 'manager',
+    password: 'manager123',
+    role: 'manager',
     name: 'John Smith',
-    title: 'Owner',
+    title: 'Manager',
     permissions: ['Full access', 'Reports', 'Settings', 'All inventory']
-  },
-  {
-    username: 'pharmacist',
-    password: 'pharmacist123',
-    role: 'pharmacist',
-    name: 'Sarah Johnson',
-    title: 'Pharmacist',
-    permissions: ['Dashboard', 'Sales', 'Reports', 'Inventory management']
   },
   {
     username: 'staff',
@@ -24,11 +16,11 @@ const users = [
     role: 'staff',
     name: 'Mike Wilson',
     title: 'Staff Member',
-    permissions: ['Dashboard', 'Sales', 'View inventory', 'View notifications']
+    permissions: ['Dashboard', 'Categories', 'Notifications']
   }
 ];
 
-export function Login({ onLogin }) {
+export function Login({ onLogin, pharmacyName }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -55,20 +47,20 @@ export function Login({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
             <Building2 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">PharmaCare</h1>
-          <p className="text-gray-600">Inventory Management System</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">{pharmacyName || 'PharmaCare'}</h1>
+          <p className="text-muted-foreground">Inventory Management System</p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-lg shadow-xl p-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">Sign In</h2>
+        <div className="bg-card rounded-lg border p-8">
+          <h2 className="text-2xl font-semibold text-card-foreground mb-6 text-center">Sign In</h2>
           
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -78,17 +70,17 @@ export function Login({ onLogin }) {
             )}
 
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="username" className="block text-sm font-medium text-muted-foreground mb-1">
                 Username
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
                 <input
                   type="text"
                   id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
                   placeholder="Enter username"
                   required
                 />
@@ -96,24 +88,24 @@ export function Login({ onLogin }) {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="password" className="block text-sm font-medium text-muted-foreground mb-1">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-10 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
                   placeholder="Enter password"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -141,33 +133,33 @@ export function Login({ onLogin }) {
 
         {/* Demo Credentials */}
         {showCredentials && (
-          <div className="mt-4 bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Demo Accounts (Click to fill credentials):</h3>
+          <div className="mt-4 bg-card rounded-lg border p-6">
+            <h3 className="text-sm font-semibold text-card-foreground mb-4">Demo Accounts (Click to fill credentials):</h3>
             <div className="space-y-3">
               {users.map((user) => (
                 <button
                   key={user.username}
                   onClick={() => handleQuickLogin(user)}
-                  className="w-full text-left p-4 border-2 border-gray-200 rounded-md hover:border-blue-500 hover:bg-blue-50 transition-all group"
+                  className="w-full text-left p-4 border rounded-md hover:border-blue-500 hover:bg-muted transition-all group"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-gray-900 group-hover:text-blue-600">{user.name}</p>
+                        <p className="font-semibold text-card-foreground group-hover:text-blue-600">{user.name}</p>
                         <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700 capitalize">
                           {user.role}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-500 mb-2">{user.title}</p>
-                      <div className="text-xs text-gray-600">
+                      <p className="text-sm text-muted-foreground mb-2">{user.title}</p>
+                      <div className="text-xs text-muted-foreground">
                         <p><strong>Username:</strong> {user.username}</p>
                         <p><strong>Password:</strong> {user.password}</p>
                       </div>
-                      <div className="mt-2 pt-2 border-t border-gray-200">
-                        <p className="text-xs font-medium text-gray-700 mb-1">Permissions:</p>
+                      <div className="mt-2 pt-2 border-t">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Permissions:</p>
                         <div className="flex flex-wrap gap-1">
                           {user.permissions.map((perm, idx) => (
-                            <span key={idx} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                            <span key={idx} className="text-xs bg-muted text-foreground px-2 py-1 rounded">
                               {perm}
                             </span>
                           ))}
@@ -178,7 +170,7 @@ export function Login({ onLogin }) {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-4 text-center">
+            <p className="text-xs text-muted-foreground mt-4 text-center">
               Click any account to auto-fill credentials, then click Sign In
             </p>
           </div>

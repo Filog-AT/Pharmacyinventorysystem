@@ -17,7 +17,7 @@ const categories = [
 
 const units = ['tablets', 'capsules', 'bottles', 'boxes', 'ml', 'mg', 'g'];
 
-export function MedicineForm({ medicine, onSubmit, onClose }) {
+export function MedicineForm({ medicine, categories, onSubmit, onClose }) {
   const [formData, setFormData] = useState({
     name: '',
     category: 'Other',
@@ -56,6 +56,22 @@ export function MedicineForm({ medicine, onSubmit, onClose }) {
       [name]: type === 'number' ? parseFloat(value) || 0 : value
     }));
   };
+
+  const defaultCategories = [
+    'Antibiotic',
+    'Painkiller',
+    'Antiviral',
+    'Antihistamine',
+    'Cardiovascular',
+    'Diabetes',
+    'Respiratory',
+    'Gastrointestinal',
+    'Dermatological',
+    'Vitamins & Supplements',
+    'Other'
+  ];
+
+  const categoriesList = Array.isArray(categories) && categories.length > 0 ? categories : defaultCategories;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -103,7 +119,7 @@ export function MedicineForm({ medicine, onSubmit, onClose }) {
                 required
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {categories.map(cat => (
+                {categoriesList.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>

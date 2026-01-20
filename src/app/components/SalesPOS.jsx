@@ -83,15 +83,15 @@ export function SalesPOS({ medicines, currentUser }) {
         {/* Products Section */}
         <div className="lg:col-span-2 space-y-4">
           {/* Search */}
-          <div className="bg-white rounded-lg shadow-sm p-4">
+          <div className="bg-card rounded-lg border p-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
               <input
                 type="text"
                 placeholder="Search medicines..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
               />
             </div>
           </div>
@@ -102,7 +102,7 @@ export function SalesPOS({ medicines, currentUser }) {
               <button
                 key={medicine.id}
                 onClick={() => addToCart(medicine)}
-                className="bg-white rounded-lg border-2 border-gray-200 p-4 hover:border-blue-500 hover:shadow-md transition-all text-left"
+                className="bg-card rounded-lg border p-4 hover:border-blue-500 hover:shadow-md transition-all text-left"
                 disabled={(medicine.quantity || 0) === 0}
               >
                 <h3 className="font-semibold text-sm mb-1 truncate">{medicine.name || 'Unknown'}</h3>

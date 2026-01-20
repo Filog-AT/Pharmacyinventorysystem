@@ -1,21 +1,38 @@
 import { useState, useMemo } from 'react';
-import { Plus, Edit, Trash2, Package } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, X, ChevronRight } from 'lucide-react';
+import { MedicineCard } from './MedicineCard';
 
-export function Categories({ medicines }) {
+export function Categories({ medicines = [], categories = [], onAddCategory }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCategory, setNewCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  // Ensure arrays
+  const safeMedicines = Array.isArray(medicines) ? medicines : [];
+  const safeCategories = Array.isArray(categories) ? categories : [];
 
   const categoryStats = useMemo(() => {
+    // Start with explicitly defined categories
     const stats = new Map();
     
-    medicines.forEach(med => {
+    // Initialize stats for all defined categories
+    safeCategories.forEach(cat => {
+      stats.set(cat, { count: 0, totalValue: 0, lowStock: 0, items: [] });
+    });
+    
+    // Aggregate medicine data
+    safeMedicines.forEach(med => {
       const category = med.category || 'Uncategorized';
+      // If we encounter a category not in our list, add it dynamically
       if (!stats.has(category)) {
-        stats.set(category, { count: 0, totalValue: 0, lowStock: 0 });
+        stats.set(category, { count: 0, totalValue: 0, lowStock: 0, items: [] });
       }
+      
       const cat = stats.get(category);
       cat.count += (med.quantity || 0);
       cat.totalValue += (med.quantity || 0) * (med.price || 0);
+      cat.items.push(med);
+      
       if ((med.quantity || 0) <= (med.minStockLevel || 0)) {
         cat.lowStock += 1;
       }
@@ -24,18 +41,63 @@ export function Categories({ medicines }) {
     return Array.from(stats.entries()).map(([name, data]) => ({
       name,
       ...data,
-      items: medicines.filter(m => (m.category || 'Uncategorized') === name).length
+      itemCount: data.items.length
     }));
-  }, [medicines]);
+  }, [safeMedicines, safeCategories]);
 
   const handleAddCategory = (e) => {
     e.preventDefault();
     if (newCategory.trim()) {
-      // In a real app, this would add to a categories list
+      onAddCategory(newCategory.trim());
       setNewCategory('');
       setShowAddForm(false);
     }
   };
+
+  // View products in a category
+  if (selectedCategory) {
+    const categoryData = categoryStats.find(c => c.name === selectedCategory);
+    
+    return (
+      <div>
+        <div className="mb-6 flex items-center gap-2">
+          <button 
+            onClick={() => setSelectedCategory(null)}
+            className="text-gray-500 hover:text-gray-700 font-medium"
+          >
+            Categories
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+          <h1 className="text-2xl font-bold text-gray-900">{selectedCategory}</h1>
+        </div>
+
+        {categoryData?.items && categoryData.items.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {categoryData.items.map(medicine => (
+              <MedicineCard
+                key={medicine.id}
+                medicine={medicine}
+                // Read-only view in categories for now, or pass handlers if needed
+                onEdit={() => {}} 
+                onDelete={() => {}}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">No products in this category</p>
+            <button 
+              onClick={() => setSelectedCategory(null)}
+              className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Back to Categories
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -61,7 +123,7 @@ export function Categories({ medicines }) {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
-                <p className="text-sm text-gray-500">{category.items} products</p>
+                <p className="text-sm text-gray-500">{category.itemCount} products</p>
               </div>
               <div className="flex gap-2">
                 <button className="p-2 hover:bg-gray-100 rounded-md transition-colors">
@@ -90,7 +152,10 @@ export function Categories({ medicines }) {
               </div>
             </div>
 
-            <button className="w-full mt-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors font-medium">
+            <button 
+              onClick={() => setSelectedCategory(category.name)}
+              className="w-full mt-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors font-medium"
+            >
               View Products
             </button>
           </div>
@@ -110,7 +175,12 @@ export function Categories({ medicines }) {
       {showAddForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-semibold mb-4">Add New Category</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Add New Category</h2>
+              <button onClick={() => setShowAddForm(false)} className="p-1 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             <form onSubmit={handleAddCategory}>
               <input
                 type="text"
