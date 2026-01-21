@@ -23,7 +23,7 @@ export function MedicineForm({ medicine, categories, onSubmit, onClose }) {
     category: 'Other',
     quantity: 0,
     unit: 'tablets',
-    minStockLevel: 10,
+    minStockLevel: 0,
     expiryDate: '',
     supplier: '',
     price: 0
@@ -179,21 +179,23 @@ export function MedicineForm({ medicine, categories, onSubmit, onClose }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="minStockLevel" className="block text-sm font-medium mb-1">
-                Min Stock Level *
-              </label>
-              <input
-                type="number"
-                id="minStockLevel"
-                name="minStockLevel"
-                value={formData.minStockLevel}
-                onChange={handleChange}
-                required
-                min="0"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            {medicine && (
+              <div>
+                <label htmlFor="minStockLevel" className="block text-sm font-medium mb-1">
+                  Min Stock Level *
+                </label>
+                <input
+                  type="number"
+                  id="minStockLevel"
+                  name="minStockLevel"
+                  value={formData.minStockLevel}
+                  onChange={handleChange}
+                  required
+                  min="0"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
 
             <div>
               <label htmlFor="price" className="block text-sm font-medium mb-1">

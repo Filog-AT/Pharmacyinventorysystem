@@ -8,7 +8,7 @@ const users = [
     role: 'manager',
     name: 'John Smith',
     title: 'Manager',
-    permissions: ['Full access', 'Reports', 'Settings', 'All inventory']
+    permissions: ['Dashboard', 'Inventory', 'Activity Logs', 'Settings']
   },
   {
     username: 'staff',
@@ -16,7 +16,7 @@ const users = [
     role: 'staff',
     name: 'Mike Wilson',
     title: 'Staff Member',
-    permissions: ['Dashboard', 'Categories', 'Notifications']
+    permissions: ['Inventory', 'Receipts', 'Activity Logs']
   }
 ];
 

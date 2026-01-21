@@ -165,7 +165,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         </div>
       </div>
 
-      {/* Stock by Category + Quick Actions */}
+      {/* Stock by Category */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 bg-white rounded-lg shadow-sm p-4">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Stock Levels by Category</h2>
@@ -185,37 +185,6 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm p-4">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <button
-              onClick={() => setShowForm(true)}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition-colors font-medium"
-            >
-              <Plus className="w-5 h-5" />
-              Add New Medicine
-            </button>
-            <button
-              onClick={() => alert('Create Order coming soon')}
-              className="w-full flex items-center justify-center gap-2 bg-orange-500 text-white py-2 rounded-md hover:bg-orange-600 transition-colors font-medium"
-            >
-              Create Order
-            </button>
-            <button
-              onClick={() => alert('Restock action coming soon')}
-              className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition-colors font-medium"
-            >
-              Restock
-            </button>
-            <button
-              onClick={() => alert('Dispense/Reduce coming soon')}
-              className="w-full flex items-center justify-center gap-2 bg-gray-800 text-white py-2 rounded-md hover:bg-gray-900 transition-colors font-medium"
-            >
-              Dispense / Reduce
-            </button>
-          </div>
         </div>
       </div>
 
