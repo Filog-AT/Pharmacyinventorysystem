@@ -73,13 +73,13 @@ export function Customers() {
         <div className="bg-green-100 border-2 border-green-200 rounded-lg p-4">
           <p className="text-sm text-green-800 mb-1">Total Revenue</p>
           <p className="text-2xl font-bold text-green-900">
-            ${customers.reduce((sum, c) => sum + c.totalPurchases, 0).toFixed(2)}
+            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(customers.reduce((sum, c) => sum + c.totalPurchases, 0))}
           </p>
         </div>
         <div className="bg-purple-100 border-2 border-purple-200 rounded-lg p-4">
           <p className="text-sm text-purple-800 mb-1">Average Purchase</p>
           <p className="text-2xl font-bold text-purple-900">
-            ${(customers.reduce((sum, c) => sum + c.totalPurchases, 0) / customers.length).toFixed(2)}
+            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(customers.reduce((sum, c) => sum + c.totalPurchases, 0) / customers.length)}
           </p>
         </div>
       </div>
@@ -135,7 +135,7 @@ export function Customers() {
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <span className="text-green-600 font-semibold">${customer.totalPurchases.toFixed(2)}</span>
+                  <span className="text-green-600 font-semibold">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(customer.totalPurchases)}</span>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-700">
                   {formatDate(customer.lastVisit)}

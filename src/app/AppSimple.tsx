@@ -11,6 +11,7 @@ import { Settings } from './components/Settings';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { OrdersSuppliers } from './components/OrdersSuppliers';
 import { AuditLog } from './components/AuditLog';
+import { Receipts } from './components/Receipts';
 import { auditService } from '@/services/auditService';
 
 // Import Firebase services (will load async)
@@ -477,6 +478,11 @@ function AppSimple() {
         return <OrdersSuppliers />;
       case 'activity':
         return <AuditLog />;
+      case 'receipts':
+        if (currentUser?.role !== 'staff') {
+          return <div className="p-6">Unauthorized</div>;
+        }
+        return <Receipts medicines={medicines} currentUser={currentUser} onUpdateMedicine={handleUpdateMedicine} />;
       default:
         return (
           <Dashboard

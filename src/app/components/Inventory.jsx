@@ -166,7 +166,7 @@ export function Inventory({ medicines = [], categories = [], onAddCategory, onDe
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
               <input
                 type="text"
-                placeholder="Search medicines or suppliers..."
+                placeholder="Search medicines..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
@@ -270,7 +270,7 @@ export function Inventory({ medicines = [], categories = [], onAddCategory, onDe
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Total Value:</span>
-                    <span className="font-semibold text-green-600">${category.totalValue.toFixed(2)}</span>
+                    <span className="font-semibold text-green-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(category.totalValue)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Low Stock Items:</span>

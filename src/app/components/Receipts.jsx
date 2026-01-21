@@ -1,16 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Plus, Minus, ShoppingCart, X } from 'lucide-react';
 import { auditService } from '@/services/auditService';
-
-export function SalesPOS({ medicines, currentUser }) {
+ 
+let receiptServiceModule = null;
+const loadReceiptService = async () => {
+  if (receiptServiceModule) return receiptServiceModule;
+  try {
+    const mod = await import('@/services/receiptService');
+    receiptServiceModule = mod.receiptService;
+    return receiptServiceModule;
+  } catch (e) {
+    console.warn('[Receipts] Failed to load receiptService:', e);
+    return null;
+  }
+};
+ 
+export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
-
+  const [receipts, setReceipts] = useState([]);
+ 
+  useEffect(() => {
+    (async () => {
+      const svc = await loadReceiptService();
+      if (svc) {
+        const data = await svc.getRecentReceipts(100);
+        setReceipts(data);
+      }
+    })();
+  }, []);
+ 
   const filteredMedicines = medicines.filter(m =>
     (m.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
-
+ 
   const addToCart = (medicine) => {
     const existing = cart.find(item => item.medicine.id === medicine.id);
     if (existing) {
@@ -23,7 +47,7 @@ export function SalesPOS({ medicines, currentUser }) {
       setCart([...cart, { medicine, quantity: 1 }]);
     }
   };
-
+ 
   const updateQuantity = (medicineId, delta) => {
     setCart(cart.map(item =>
       item.medicine.id === medicineId
@@ -31,19 +55,18 @@ export function SalesPOS({ medicines, currentUser }) {
         : item
     ).filter(item => item.quantity > 0));
   };
-
+ 
   const removeFromCart = (medicineId) => {
     setCart(cart.filter(item => item.medicine.id !== medicineId));
   };
-
+ 
   const total = cart.reduce((sum, item) => sum + ((item.medicine.price || 0) * item.quantity), 0);
-  const tax = total * 0.08; // 8% tax
-  const grandTotal = total + tax;
-
+  const tax = 0;
+  const grandTotal = total;
+ 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
-    
-    // Log each medicine sold to audit trail
+ 
     try {
       for (const item of cart) {
         await auditService.logAction({
@@ -61,28 +84,64 @@ export function SalesPOS({ medicines, currentUser }) {
             customerName: customerName || 'Walk-in',
           },
         });
+ 
+        const newQty = Math.max(0, (item.medicine.quantity || 0) - item.quantity);
+        onUpdateMedicine?.(item.medicine.id, { ...item.medicine, quantity: newQty });
+      }
+ 
+      const svc = await loadReceiptService();
+      if (svc) {
+        const receiptId = await svc.addReceipt({
+          timestamp: new Date(),
+          customerName: customerName || 'Walk-in',
+          items: cart.map((ci) => ({
+            medicineId: ci.medicine.id,
+            name: ci.medicine.name,
+            quantity: ci.quantity,
+            price: ci.medicine.price || 0,
+          })),
+          subtotal: total,
+          tax: 0,
+          grandTotal: total,
+          userId: currentUser?.uid || 'unknown',
+          userName: currentUser?.name || 'Unknown User',
+        });
+        await auditService.logAction({
+          userId: currentUser?.uid || 'unknown',
+          userName: currentUser?.name || 'Unknown User',
+          userRole: currentUser?.role || 'unknown',
+          action: 'SALE_COMPLETED',
+          entityType: 'sale',
+          entityId: receiptId,
+          entityName: 'Receipt',
+          details: {
+            itemsCount: cart.length,
+            subtotal: total,
+            grandTotal: total,
+            customerName: customerName || 'Walk-in',
+          },
+        });
+        const data = await svc.getRecentReceipts(100);
+        setReceipts(data);
       }
     } catch (error) {
-      console.error('[SalesPOS] Failed to log sale:', error);
+      console.error('[Receipts] Checkout error:', error);
     }
-    
+ 
     alert(`Sale completed!\nCustomer: ${customerName || 'Walk-in'}\nTotal: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}`);
     setCart([]);
     setCustomerName('');
   };
-
+ 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Receipts</h1>
         <p className="text-gray-600">Process sales and manage transactions</p>
       </div>
-
+ 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Products Section */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Search */}
           <div className="bg-card rounded-lg border p-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
@@ -95,8 +154,7 @@ export function SalesPOS({ medicines, currentUser }) {
               />
             </div>
           </div>
-
-          {/* Products Grid */}
+ 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {filteredMedicines.map(medicine => (
               <button
@@ -115,16 +173,14 @@ export function SalesPOS({ medicines, currentUser }) {
             ))}
           </div>
         </div>
-
-        {/* Cart Section */}
+ 
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-lg p-6 sticky top-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" />
               Current Sale
             </h2>
-
-            {/* Customer Name */}
+ 
             <input
               type="text"
               placeholder="Customer name (optional)"
@@ -132,8 +188,7 @@ export function SalesPOS({ medicines, currentUser }) {
               onChange={(e) => setCustomerName(e.target.value)}
               className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
             />
-
-            {/* Cart Items */}
+ 
             <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
               {cart.length === 0 ? (
                 <p className="text-gray-400 text-center py-8 text-sm">Cart is empty</p>
@@ -174,24 +229,18 @@ export function SalesPOS({ medicines, currentUser }) {
                 ))
               )}
             </div>
-
-            {/* Totals */}
+ 
             <div className="space-y-2 border-t pt-4 mb-4">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
                 <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(total)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Tax (8%):</span>
-                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(tax)}</span>
               </div>
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Total:</span>
                 <span className="text-blue-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}</span>
               </div>
             </div>
-
-            {/* Actions */}
+ 
             <div className="space-y-2">
               <button
                 onClick={handleCheckout}
@@ -208,6 +257,64 @@ export function SalesPOS({ medicines, currentUser }) {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+ 
+      <div className="bg-card rounded-lg border p-4 mt-6">
+        <h2 className="text-lg font-semibold text-card-foreground mb-2">Receipts History</h2>
+        <div className="mb-2">
+          <button
+            onClick={async () => {
+              const svc = await loadReceiptService();
+              if (svc) {
+                const ok = confirm('Clear all receipts?');
+                if (ok) {
+                  await svc.clearAllReceipts();
+                  setReceipts([]);
+                }
+              }
+            }}
+            className="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+          >
+            Clear Receipts History
+          </button>
+        </div>
+        <div className="space-y-2">
+          {receipts.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No receipts recorded</p>
+          ) : (
+            receipts.map((r) => {
+              const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
+              const label = `${ts.toLocaleString()}${r.customerName && r.customerName !== 'Walk-in' ? ' - ' + r.customerName : ''}`;
+              const subtotal = r.subtotal || 0;
+              const grand = r.grandTotal || subtotal;
+              return (
+                <details key={r.id || label} className="bg-card rounded-md border p-2">
+                  <summary className="cursor-pointer text-sm font-medium">{label}</summary>
+                  <div className="mt-2 space-y-2">
+                    <div className="space-y-1">
+                      {Array.isArray(r.items) && r.items.map((it, idx) => (
+                        <div key={(it.medicineId || '') + '-' + idx} className="flex justify-between text-sm">
+                          <span>{it.name} x{it.quantity}</span>
+                          <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((it.price || 0) * (it.quantity || 0))}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t pt-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Subtotal</span>
+                        <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-semibold">
+                        <span>Total</span>
+                        <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grand)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

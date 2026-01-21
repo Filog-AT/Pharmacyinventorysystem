@@ -197,7 +197,7 @@ export function MedicineForm({ medicine, categories, onSubmit, onClose }) {
 
             <div>
               <label htmlFor="price" className="block text-sm font-medium mb-1">
-                Price ($) *
+                Price (₱) *
               </label>
               <input
                 type="number"

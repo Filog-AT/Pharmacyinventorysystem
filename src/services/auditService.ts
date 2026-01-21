@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 
-export type AuditActionType = 'MEDICINE_ADD' | 'MEDICINE_EDIT' | 'MEDICINE_DELETE' | 'MEDICINE_SOLD' | 'USER_ADD' | 'USER_EDIT' | 'USER_DELETE' | 'LOGIN' | 'LOGOUT' | 'PHARMACY_EDIT';
+export type AuditActionType = 'MEDICINE_ADD' | 'MEDICINE_EDIT' | 'MEDICINE_DELETE' | 'MEDICINE_SOLD' | 'USER_ADD' | 'USER_EDIT' | 'USER_DELETE' | 'LOGIN' | 'LOGOUT' | 'PHARMACY_EDIT' | 'SALE_COMPLETED';
 
 export interface AuditLog {
   id?: string;

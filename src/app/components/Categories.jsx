@@ -142,7 +142,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Total Value:</span>
-                <span className="font-semibold text-green-600">${category.totalValue.toFixed(2)}</span>
+                <span className="font-semibold text-green-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(category.totalValue)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Low Stock Items:</span>

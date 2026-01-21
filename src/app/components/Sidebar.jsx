@@ -1,9 +1,10 @@
-import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings, Menu, X, LogOut, UserCircle } from 'lucide-react';
+import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings, Menu, X, LogOut, UserCircle, ShoppingCart } from 'lucide-react';
 import { SidebarItem } from '@/app/components/SidebarItem';
 
 const allMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['manager'] },
   { id: 'inventory', label: 'Inventory', icon: FolderTree, roles: ['manager', 'staff'] },
+  { id: 'receipts', label: 'Receipts', icon: ShoppingCart, roles: ['staff'] },
   { id: 'activity', label: 'Activity Logs', icon: FileText, roles: ['manager', 'staff'] },
   { id: 'orders', label: 'Orders & Suppliers', icon: FileText, roles: [] },
   { id: 'customers', label: 'Customers', icon: Users, roles: [] },

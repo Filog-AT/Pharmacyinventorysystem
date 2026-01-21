@@ -44,7 +44,7 @@ export function Reports({ medicines }) {
             <p className="text-sm text-gray-600">Total Revenue</p>
             <DollarSign className="w-5 h-5 text-green-600" />
           </div>
-          <p className="text-2xl font-bold text-gray-900">${totalRevenue.toLocaleString()}</p>
+          <p className="text-2xl font-bold text-gray-900">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(totalRevenue)}</p>
           <p className="text-xs text-green-600 mt-1">+12.5% from last month</p>
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
@@ -60,7 +60,7 @@ export function Reports({ medicines }) {
             <p className="text-sm text-gray-600">Avg Order Value</p>
             <TrendingUp className="w-5 h-5 text-purple-600" />
           </div>
-          <p className="text-2xl font-bold text-gray-900">${avgOrderValue.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-gray-900">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(avgOrderValue)}</p>
           <p className="text-xs text-green-600 mt-1">+3.8% from last month</p>
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
@@ -85,7 +85,7 @@ export function Reports({ medicines }) {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Line type="monotone" dataKey="revenue" stroke="#3B82F6" strokeWidth={2} name="Revenue ($)" />
+              <Line type="monotone" dataKey="revenue" stroke="#3B82F6" strokeWidth={2} name="Revenue (₱)" />
             </LineChart>
           </ResponsiveContainer>
         </div>
