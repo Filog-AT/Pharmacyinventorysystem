@@ -2,10 +2,10 @@ import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings, Menu, X, 
 import { SidebarItem } from '@/app/components/SidebarItem';
 
 const allMenuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['manager'] },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['manager', 'staff'] },
   { id: 'inventory', label: 'Inventory', icon: FolderTree, roles: ['manager', 'staff'] },
   { id: 'receipts', label: 'Receipts', icon: ShoppingCart, roles: ['staff'] },
-  { id: 'activity', label: 'Activity Logs', icon: FileText, roles: ['manager', 'staff'] },
+  { id: 'activity', label: 'Activity Logs', icon: FileText, roles: ['manager'] },
   { id: 'orders', label: 'Orders & Suppliers', icon: FileText, roles: [] },
   { id: 'customers', label: 'Customers', icon: Users, roles: [] },
   { id: 'reports', label: 'Reports', icon: FileText, roles: [] },
@@ -60,8 +60,7 @@ export function Sidebar({ activePage, onPageChange, isOpen, onToggle, userRole, 
                 <UserCircle className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-card-foreground truncate">{userName}</p>
-                <span className={`inline-block text-xs font-semibold px-2 py-1 rounded-full mt-1 capitalize ${roleColor.text} ${roleColor.bg}`}>
+                <span className={`inline-block text-lg font-semibold px-2 py-1 rounded-full capitalize ${roleColor.text} ${roleColor.bg}`}>
                   {userRole}
                 </span>
               </div>

@@ -25,9 +25,12 @@ export const medicineService = {
       const medicines: Medicine[] = [];
       
       querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        // Remove any 'id' field from the data to ensure we use the document ID
+        const { id, ...dataWithoutId } = data;
         medicines.push({
           id: doc.id,
-          ...doc.data(),
+          ...dataWithoutId,
         } as Medicine);
       });
       
@@ -41,7 +44,9 @@ export const medicineService = {
   // Add a new medicine
   async addMedicine(medicineData: Omit<Medicine, 'id'>): Promise<string> {
     try {
-      const docRef = await addDoc(collection(db, MEDICINES_COLLECTION), medicineData);
+      // Ensure we don't save the 'id' field in the document data
+      const { id, ...dataToSave } = medicineData as any;
+      const docRef = await addDoc(collection(db, MEDICINES_COLLECTION), dataToSave);
       return docRef.id;
     } catch (error) {
       console.error('Error adding medicine:', error);

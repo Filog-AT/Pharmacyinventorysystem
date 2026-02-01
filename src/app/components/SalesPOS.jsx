@@ -98,7 +98,13 @@ export function SalesPOS({ medicines, currentUser }) {
 
           {/* Products Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {filteredMedicines.map(medicine => (
+            {filteredMedicines
+              .sort((a, b) => {
+                const da = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+                const db = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+                return da - db;
+              })
+              .map(medicine => (
               <button
                 key={medicine.id}
                 onClick={() => addToCart(medicine)}

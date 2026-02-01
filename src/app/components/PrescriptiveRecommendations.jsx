@@ -125,8 +125,8 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
               </tr>
             </thead>
             <tbody>
-              {top.map(r => (
-                <tr key={`${r.id}-${r.action}`} className="border-t">
+              {top.map((r, i) => (
+                <tr key={`${r.id}-${r.action}-${i}`} className="border-t">
                   <td className="p-3 font-medium text-card-foreground">{r.product}</td>
                   <td className="p-3">{r.stock}</td>
                   <td className="p-3">{r.action}</td>

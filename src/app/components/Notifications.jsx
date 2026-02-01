@@ -9,7 +9,10 @@ export function Notifications({ medicines }) {
       if (!med || !med.id) return; // Skip invalid medicines
 
       // Low stock notifications
-      if ((med.quantity || 0) <= (med.minStockLevel || 0)) {
+      const isTabletsOrCapsules = med.unit === 'tablets' || med.unit === 'capsules' || med.subUnitType === 'tablets' || med.subUnitType === 'capsules';
+      const lowStockThreshold = isTabletsOrCapsules ? 50 : (med.minStockLevel || 0);
+      
+      if ((med.quantity || 0) <= lowStockThreshold) {
         notifications.push({
           id: `low-${med.id}`,
           type: 'warning',

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Minus, ShoppingCart, X } from 'lucide-react';
+import { Search, ShoppingCart, X, Minus, Plus } from 'lucide-react';
 import { auditService } from '@/services/auditService';
  
 let receiptServiceModule = null;
@@ -31,36 +31,98 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     })();
   }, []);
  
-  const filteredMedicines = medicines.filter(m =>
-    (m.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMedicines = medicines
+    .filter(m => (m.name || '').toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      const da = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+      const db = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+      return da - db;
+    });
  
+  const getUnitMultiplier = (m, unit) => {
+    let blister = Number(m.blisterCount || 0);
+    let tablet = Number(m.tabletCount || 0);
+    if ((!blister || !tablet) && Array.isArray(m.batches) && m.batches.length > 0) {
+      const b = m.batches[0];
+      blister = Number(b?.blisterCount || blister || 0);
+      tablet = Number(b?.tabletCount || tablet || 0);
+    }
+    if (unit === 'blister') {
+      return tablet > 0 ? tablet : 1;
+    }
+    if (unit === 'box') {
+      const t = tablet > 0 ? tablet : 1;
+      const b = blister > 0 ? blister : 1;
+      return t * b;
+    }
+    return 1;
+  };
+  const getTabletCount = (m) => {
+    let tablet = Number(m.tabletCount || 0);
+    if (!tablet && Array.isArray(m.batches) && m.batches.length > 0) {
+      tablet = Number(m.batches[0]?.tabletCount || 0);
+    }
+    return tablet;
+  };
+  const getBoxTabletCount = (m) => {
+    let blister = Number(m.blisterCount || 0);
+    let tablet = Number(m.tabletCount || 0);
+    if ((!blister || !tablet) && Array.isArray(m.batches) && m.batches.length > 0) {
+      const b = m.batches[0];
+      blister = Number(b?.blisterCount || blister || 0);
+      tablet = Number(b?.tabletCount || tablet || 0);
+    }
+    const t = tablet > 0 ? tablet : 0;
+    const b = blister > 0 ? blister : 0;
+    return t * b;
+  };
+  const getAvailablePieces = (m) => {
+    if (Array.isArray(m.batches) && m.batches.length > 0) {
+      return m.batches.reduce((sum, b) => sum + Number(b?.quantityPieces || 0), 0);
+    }
+    return Number(m.quantity || 0);
+  };
+  const getMaxSaleQuantity = (m, unit) => {
+    const available = getAvailablePieces(m);
+    const mult = getUnitMultiplier(m, unit);
+    if (mult <= 0) return 0;
+    return Math.floor(available / mult);
+  };
+
   const addToCart = (medicine) => {
-    const existing = cart.find(item => item.medicine.id === medicine.id);
+    const defaultUnit = (medicine.unit === 'capsules' || medicine.unit === 'tablets') ? 'piece' : 'piece';
+    const multiplier = getUnitMultiplier(medicine, defaultUnit);
+    const unitPrice = (medicine.price || 0) * multiplier;
+    const existing = cart.find(item => item.medicine.id === medicine.id && item.sellUnit === defaultUnit);
     if (existing) {
-      setCart(cart.map(item =>
-        item.medicine.id === medicine.id
-          ? { ...item, quantity: item.quantity + 1 }
+      setCart(prev => prev.map(item =>
+        item.medicine.id === medicine.id && item.sellUnit === defaultUnit
+          ? { ...item, quantity: item.quantity + 1, unitPrice }
           : item
       ));
     } else {
-      setCart([...cart, { medicine, quantity: 1 }]);
+      setCart(prev => [...prev, { medicine, quantity: 1, sellUnit: defaultUnit, unitPrice }]);
     }
   };
  
-  const updateQuantity = (medicineId, delta) => {
-    setCart(cart.map(item =>
-      item.medicine.id === medicineId
-        ? { ...item, quantity: Math.max(1, item.quantity + delta) }
-        : item
-    ).filter(item => item.quantity > 0));
+  const updateQuantity = (medicineId, unit, delta) => {
+    setCart(prev => prev.map(item => {
+      if (item.medicine.id === medicineId && item.sellUnit === unit) {
+        const maxQ = getMaxSaleQuantity(item.medicine, unit);
+        const next = Math.max(1, item.quantity + delta);
+        return { ...item, quantity: Math.min(next, Math.max(1, maxQ)) };
+      }
+      return item;
+    }).filter(item => item.quantity > 0));
   };
  
-  const removeFromCart = (medicineId) => {
-    setCart(cart.filter(item => item.medicine.id !== medicineId));
+  const removeFromCart = (medicineId, unit) => {
+    setCart(cart.filter(item => !(item.medicine.id === medicineId && item.sellUnit === unit)));
   };
  
-  const total = cart.reduce((sum, item) => sum + ((item.medicine.price || 0) * item.quantity), 0);
+  const total = cart.reduce((sum, item) => {
+    return sum + ((item.unitPrice || (item.medicine.price || 0)) * item.quantity);
+  }, 0);
   const tax = 0;
   const grandTotal = total;
  
@@ -69,6 +131,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
  
     try {
       for (const item of cart) {
+        const multiplier = getUnitMultiplier(item.medicine, item.sellUnit);
+        const soldPieces = item.quantity * multiplier;
         await auditService.logAction({
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
@@ -79,14 +143,41 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           entityName: item.medicine.name,
           details: {
             quantity: item.quantity,
+            unitSold: item.sellUnit,
             price: item.medicine.price,
-            totalPrice: (item.medicine.price || 0) * item.quantity,
+            totalPrice: (item.medicine.price || 0) * item.quantity * multiplier,
             customerName: customerName || 'Walk-in',
           },
         });
  
-        const newQty = Math.max(0, (item.medicine.quantity || 0) - item.quantity);
-        onUpdateMedicine?.(item.medicine.id, { ...item.medicine, quantity: newQty });
+        let remaining = soldPieces;
+        let updatedBatches = Array.isArray(item.medicine.batches) ? item.medicine.batches.map(b => ({ ...b })) : [];
+        if (updatedBatches.length > 0) {
+          updatedBatches.sort((a, b) => {
+            const ta = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+            const tb = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+            return ta - tb;
+          });
+          for (let i = 0; i < updatedBatches.length && remaining > 0; i++) {
+            const qty = Number(updatedBatches[i].quantityPieces || 0);
+            const consume = Math.min(qty, remaining);
+            updatedBatches[i].quantityPieces = qty - consume;
+            remaining -= consume;
+          }
+        }
+        const newQty = updatedBatches.length > 0
+          ? updatedBatches.reduce((sum, b) => sum + Number(b.quantityPieces || 0), 0)
+          : Math.max(0, (item.medicine.quantity || 0) - soldPieces);
+        const earliestBatch = updatedBatches
+          .filter(b => !!b.expiryDate)
+          .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0];
+        const updatedData = {
+          ...item.medicine,
+          quantity: newQty,
+          expiryDate: earliestBatch?.expiryDate || item.medicine.expiryDate || '',
+          batches: updatedBatches.length > 0 ? updatedBatches : item.medicine.batches
+        };
+        onUpdateMedicine?.(item.medicine.id, updatedData);
       }
  
       const svc = await loadReceiptService();
@@ -98,6 +189,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             medicineId: ci.medicine.id,
             name: ci.medicine.name,
             quantity: ci.quantity,
+            unitSold: ci.sellUnit,
             price: ci.medicine.price || 0,
           })),
           subtotal: total,
@@ -194,14 +286,55 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                 <p className="text-gray-400 text-center py-8 text-sm">Cart is empty</p>
               ) : (
                 cart.map(item => (
-                  <div key={item.medicine.id} className="border-b pb-3">
+                  <div key={`${item.medicine.id}-${item.sellUnit}`} className="border-b pb-3">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
                         <p className="font-medium text-sm">{item.medicine.name || 'Unknown'}</p>
-                        <p className="text-xs text-gray-500">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.medicine.price || 0)} each</p>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={item.sellUnit}
+                            onChange={(e) => {
+                              const newUnit = e.target.value;
+                              setCart(prev => prev.map(ci => {
+                                if (ci.medicine.id === item.medicine.id && ci.sellUnit === item.sellUnit) {
+                                  const m = getUnitMultiplier(ci.medicine, newUnit);
+                                  const up = (ci.medicine.price || 0) * m;
+                                  const maxQ = getMaxSaleQuantity(ci.medicine, newUnit);
+                                  const qty = Math.min(ci.quantity, Math.max(1, maxQ));
+                                  return { ...ci, sellUnit: newUnit, unitPrice: up, quantity: qty };
+                                }
+                                return ci;
+                              }));
+                            }}
+                            className="text-xs border rounded px-2 py-1"
+                          >
+                            <option value="piece">{item.medicine.unit === 'capsules' ? 'Capsule' : item.medicine.unit === 'tablets' ? 'Tablet' : 'Unit'}</option>
+                            {Number(item.medicine.tabletCount || 0) > 0 && (
+                              <option value="blister">Blister/Strip</option>
+                            )}
+                            {Number(item.medicine.tabletCount || 0) > 0 && Number(item.medicine.blisterCount || 0) > 0 && (
+                              <option value="box">Box</option>
+                            )}
+                          </select>
+                          <p className="text-xs text-gray-500">
+                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+                              item.unitPrice || ((item.medicine.price || 0) * getUnitMultiplier(item.medicine, item.sellUnit))
+                            )} per {item.sellUnit}
+                          </p>
+                          {item.sellUnit === 'blister' && getTabletCount(item.medicine) > 0 && (
+                            <span className="text-xs text-gray-500">
+                              ({getTabletCount(item.medicine)} tablets)
+                            </span>
+                          )}
+                          {item.sellUnit === 'box' && getBoxTabletCount(item.medicine) > 0 && (
+                            <span className="text-xs text-gray-500">
+                              ({getBoxTabletCount(item.medicine)} tablets)
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button
-                        onClick={() => removeFromCart(item.medicine.id)}
+                        onClick={() => removeFromCart(item.medicine.id, item.sellUnit)}
                         className="text-red-500 hover:text-red-700"
                       >
                         <X className="w-4 h-4" />
@@ -210,20 +343,39 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 bg-gray-100 rounded-md">
                         <button
-                          onClick={() => updateQuantity(item.medicine.id, -1)}
+                          onClick={() => updateQuantity(item.medicine.id, item.sellUnit, -1)}
                           className="p-1 hover:bg-gray-200 rounded"
                         >
                           <Minus className="w-4 h-4" />
                         </button>
-                        <span className="w-8 text-center font-medium">{item.quantity}</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const v = Math.max(1, parseInt(e.target.value || '1', 10));
+                            setCart(prev => prev.map(ci => {
+                              if (ci.medicine.id === item.medicine.id && ci.sellUnit === item.sellUnit) {
+                                const maxQ = getMaxSaleQuantity(ci.medicine, ci.sellUnit);
+                                return { ...ci, quantity: Math.min(v, Math.max(1, maxQ)) };
+                              }
+                              return ci;
+                            }));
+                          }}
+                          className="w-16 text-center font-medium bg-white border rounded"
+                        />
                         <button
-                          onClick={() => updateQuantity(item.medicine.id, 1)}
+                          onClick={() => updateQuantity(item.medicine.id, item.sellUnit, 1)}
                           className="p-1 hover:bg-gray-200 rounded"
                         >
                           <Plus className="w-4 h-4" />
                         </button>
                       </div>
-                      <span className="font-semibold">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format((item.medicine.price || 0) * item.quantity)}</span>
+                      <span className="font-semibold">
+                        {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+                          (item.unitPrice || (item.medicine.price || 0)) * item.quantity
+                        )}
+                      </span>
                     </div>
                   </div>
                 ))

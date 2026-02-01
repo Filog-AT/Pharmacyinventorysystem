@@ -19,12 +19,18 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
     return expiryDate < today;
   };
 
-  const isLowStock = medicine.quantity && medicine.minStockLevel && medicine.quantity <= medicine.minStockLevel;
+  const isLowStock = (() => {
+    const qty = Number(medicine.quantity || 0);
+    const unit = (medicine.unit || '').toLowerCase();
+    const pillUnit = unit === 'tablets' || unit === 'capsules';
+    const threshold = pillUnit ? 30 : Number(medicine.minStockLevel || 0);
+    return threshold > 0 && qty <= threshold;
+  })();
 
   const getStockStatusColor = () => {
     if (isExpired()) return 'bg-red-100 text-red-800 border-red-200';
-    if (isLowStock) return 'bg-orange-100 text-orange-800 border-orange-200';
     if (isExpiringSoon()) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    if (isLowStock) return 'bg-orange-100 text-orange-800 border-orange-200';
     return 'bg-green-100 text-green-800 border-green-200';
   };
 
@@ -37,7 +43,18 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
     <div className={`rounded-lg border-2 p-4 transition-all hover:shadow-lg ${getStockStatusColor()}`}>
       <div className="flex justify-between items-start mb-3">
         <div className="flex-1">
-          <h3 className="font-semibold text-lg mb-1">{medicine.name}</h3>
+          <h3 className="font-semibold text-lg mb-1">
+            {medicine.name}
+            {(() => {
+              const hasStructured = Number(medicine.dosageAmount || 0) > 0 && !!medicine.dosageUnit;
+              const label = hasStructured
+                ? `${Number(medicine.dosageAmount)} ${medicine.dosageUnit}`
+                : (medicine.dosage || '');
+              return label ? (
+                <span className="ml-2 text-sm font-normal text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">{label}</span>
+              ) : null;
+            })()}
+          </h3>
           <p className="text-sm opacity-75">{medicine.category}</p>
         </div>
         <div className="flex gap-2">

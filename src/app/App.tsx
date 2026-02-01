@@ -110,8 +110,7 @@ function App() {
     'Respiratory',
     'Gastrointestinal',
     'Dermatological',
-    'Vitamins & Supplements',
-    'Other'
+    'Vitamins & Supplements'
   ]);
 
   // Load categories from Firestore on mount
@@ -121,7 +120,7 @@ function App() {
         const firebaseCategories = await categoryService.getCategories();
         if (firebaseCategories.length === 0) {
           const defaults = [
-            'Antibiotic','Painkiller','Antiviral','Antihistamine','Cardiovascular','Diabetes','Respiratory','Gastrointestinal','Dermatological','Vitamins & Supplements','Other'
+            'Antibiotic','Painkiller','Antiviral','Antihistamine','Cardiovascular','Diabetes','Respiratory','Gastrointestinal','Dermatological','Vitamins & Supplements'
           ];
           for (const name of defaults) {
             try { await categoryService.addCategory(name); } catch {}
@@ -255,11 +254,23 @@ function App() {
 
   const handleAddMedicine = async (medicineData: any) => {
     try {
-      const id = await medicineService.addMedicine(medicineData);
-      addMedicine({
-        ...medicineData,
-        id
-      });
+      const normName = (medicineData.name || '').trim().toLowerCase();
+      const existing = medicines.find(m =>
+        (m.name || '').trim().toLowerCase() === normName &&
+        (m.expiryDate || '') === (medicineData.expiryDate || '') &&
+        (m.unit || '') === (medicineData.unit || '')
+      );
+      if (existing) {
+        const newQty = (existing.quantity || 0) + (medicineData.quantity || 0);
+        await medicineService.updateMedicine(existing.id, { quantity: newQty });
+        updateMedicine(existing.id, { ...existing, quantity: newQty });
+      } else {
+        const id = await medicineService.addMedicine(medicineData);
+        addMedicine({
+          ...medicineData,
+          id
+        });
+      }
     } catch (error) {
       console.error('Failed to add medicine:', error);
       setError('Failed to add medicine');
@@ -279,14 +290,50 @@ function App() {
     }
   };
 
-  const handleDeleteMedicine = async (id: string) => {
-    if (confirm('Are you sure you want to delete this medicine?')) {
-      try {
-        await medicineService.deleteMedicine(id);
-        deleteMedicine(id);
-      } catch (error) {
-        console.error('Failed to delete medicine:', error);
-        setError('Failed to delete medicine');
+  const handleDeleteMedicine = async (id: string, batchId?: string) => {
+    if (batchId) {
+      if (confirm('Are you sure you want to delete this batch?')) {
+        const medicine = medicines.find(m => m.id === id);
+        if (!medicine) return;
+
+        if ((!medicine.batches || medicine.batches.length === 0) && batchId === `${id}-single`) {
+          try {
+            await medicineService.deleteMedicine(id);
+            deleteMedicine(id);
+          } catch (error) {
+            console.error('Failed to delete medicine:', error);
+            setError('Failed to delete medicine');
+          }
+          return;
+        }
+
+        const currentBatches = medicine.batches || [];
+        const newBatches = currentBatches.filter((b: any) => b.batchId !== batchId);
+        const newQty = newBatches.reduce((sum: number, b: any) => sum + Number(b.quantityPieces || 0), 0);
+        
+        const updated = {
+          ...medicine,
+          quantity: newQty,
+          batches: newBatches
+        };
+
+        try {
+          await medicineService.updateMedicine(id, updated);
+          updateMedicine(id, updated);
+        } catch (error) {
+          console.error('Failed to delete batch:', error);
+          setError('Failed to delete batch');
+        }
+      }
+    } else {
+      if (confirm('Are you sure you want to delete this medicine?')) {
+        try {
+          await medicineService.deleteMedicine(id);
+          deleteMedicine(id);
+        } catch (error) {
+          console.error('Failed to delete medicine:', error);
+          setError('Failed to delete medicine');
+        }
       }
     }
   };

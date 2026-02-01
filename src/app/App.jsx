@@ -88,7 +88,18 @@ function App() {
       ...medicineData,
       id: Date.now().toString()
     };
-    setMedicines(prev => [...prev, newMedicine]);
+    const normName = (newMedicine.name || '').trim().toLowerCase();
+    const match = medicines.find(m =>
+      (m.name || '').trim().toLowerCase() === normName &&
+      (m.expiryDate || '') === (newMedicine.expiryDate || '') &&
+      (m.unit || '') === (newMedicine.unit || '')
+    );
+    if (match) {
+      const updated = { ...match, quantity: (match.quantity || 0) + (newMedicine.quantity || 0) };
+      setMedicines(prev => prev.map(m => m.id === match.id ? updated : m));
+    } else {
+      setMedicines(prev => [...prev, newMedicine]);
+    }
   };
 
   const handleUpdateMedicine = (id, medicineData) => {
