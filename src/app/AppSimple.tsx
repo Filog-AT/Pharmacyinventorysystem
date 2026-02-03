@@ -14,6 +14,7 @@ import { OrdersSuppliers } from './components/OrdersSuppliers';
 import { AuditLog } from './components/AuditLog';
 import { Receipts } from './components/Receipts';
 import { auditService } from '@/services/auditService';
+import { Toaster } from '@/app/components/ui/sonner';
 
 // Import Firebase services (will load async)
 let medicineService: any = null;
@@ -253,6 +254,9 @@ function AppSimple() {
     };
     setCurrentUser(appUser);
     setActivePage(appUser?.role === 'manager' ? 'dashboard' : 'inventory');
+    try {
+      sessionStorage.removeItem(`pharmacy_low_toasts_shown_${appUser.uid}`);
+    } catch {}
     (async () => {
       try {
         await auditService.logAction({
@@ -673,6 +677,7 @@ function AppSimple() {
         pharmacyName={settings.pharmacyName}
       />
       <main className="lg:ml-64 p-6">
+        <Toaster richColors position="top-right" />
         <ErrorBoundary>
           {renderPage()}
         </ErrorBoundary>

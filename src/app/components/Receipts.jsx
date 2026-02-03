@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, ShoppingCart, X, Minus, Plus } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { auditService } from '@/services/auditService';
  
 let receiptServiceModule = null;
@@ -20,6 +21,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [receipts, setReceipts] = useState([]);
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
  
   useEffect(() => {
     (async () => {
@@ -182,7 +184,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
  
       const svc = await loadReceiptService();
       if (svc) {
-        const receiptId = await svc.addReceipt({
+        const payload = {
           timestamp: new Date(),
           customerName: customerName || 'Walk-in',
           items: cart.map((ci) => ({
@@ -197,7 +199,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           grandTotal: total,
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
-        });
+        };
+        const receiptId = await svc.addReceipt(payload);
         await auditService.logAction({
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
@@ -215,6 +218,11 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
         });
         const data = await svc.getRecentReceipts(100);
         setReceipts(data);
+        const createdReceipt = { id: receiptId, ...payload };
+        alert(`Sale completed!\nCustomer: ${customerName || 'Walk-in'}\nTotal: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}`);
+        setCart([]);
+        setCustomerName('');
+        return createdReceipt;
       }
     } catch (error) {
       console.error('[Receipts] Checkout error:', error);
@@ -223,6 +231,186 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     alert(`Sale completed!\nCustomer: ${customerName || 'Walk-in'}\nTotal: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}`);
     setCart([]);
     setCustomerName('');
+    return null;
+  };
+ 
+  const formatMoney = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n);
+  const printHtml = (html) => {
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.srcdoc = html;
+      document.body.appendChild(iframe);
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } finally {
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 500);
+        }
+      };
+    } catch (e) {
+      const w = window.open('', '_blank', 'noopener,noreferrer');
+      if (!w) return;
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      w.onload = () => {
+        try { w.print(); } catch {}
+      };
+    }
+  };
+  const buildReceiptHtml = (r) => {
+    const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp || Date.now());
+    const label = `${ts.toLocaleString()}${r.customerName && r.customerName !== 'Walk-in' ? ' - ' + r.customerName : ''}`;
+    const itemsRows = (Array.isArray(r.items) ? r.items : [])
+      .map(it => {
+        const qty = Number(it.quantity || 0);
+        const price = Number(it.price || 0);
+        const total = qty * price;
+        return `<tr><td>${it.name}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${formatMoney(price)}</td><td style="text-align:right">${formatMoney(total)}</td></tr>`;
+      })
+      .join('');
+    const subtotal = Number(r.subtotal || 0);
+    const grand = Number(r.grandTotal || subtotal);
+    const rid = r.id || '';
+    return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Receipt ${rid}</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #111827; padding: 24px; }
+    .title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: #6b7280; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+    th { text-align: left; background: #f9fafb; }
+    .totals { margin-top: 12px; width: 100%; }
+    .totals td { padding: 6px; font-size: 14px; }
+    .totals .label { color: #374151; }
+    .totals .value { text-align: right; font-weight: 600; }
+    .footer { margin-top: 16px; font-size: 12px; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="title">Pharmacy Inventory System</div>
+  <div class="subtitle">Receipt ${rid ? '#'+rid : ''} • ${label}</div>
+  <table>
+    <thead>
+      <tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr>
+    </thead>
+    <tbody>
+      ${itemsRows}
+    </tbody>
+  </table>
+  <table class="totals">
+    <tr><td class="label">Subtotal</td><td class="value">${formatMoney(subtotal)}</td></tr>
+    <tr><td class="label">Total</td><td class="value">${formatMoney(grand)}</td></tr>
+  </table>
+  <div class="footer">Cashier: ${r.userName || 'Unknown'} • Customer: ${r.customerName || 'Walk-in'}</div>
+</body>
+</html>`;
+  };
+  const handlePrintReceipt = (r) => {
+    const html = buildReceiptHtml(r);
+    printHtml(html);
+  };
+  const handleDownloadReceipt = (r) => {
+    const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp || Date.now());
+    const safeTs = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}_${String(ts.getHours()).padStart(2,'0')}${String(ts.getMinutes()).padStart(2,'0')}`;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    let y = 48;
+    doc.setFontSize(16);
+    doc.text('Pharmacy Inventory System', 40, y);
+    y += 22;
+    doc.setFontSize(12);
+    doc.text(`Receipt ${r.id ? '#'+r.id : ''}`, 40, y);
+    y += 16;
+    doc.text(`Date: ${ts.toLocaleString()}`, 40, y);
+    y += 16;
+    doc.text(`Customer: ${r.customerName || 'Walk-in'}`, 40, y);
+    y += 24;
+    doc.setFontSize(12);
+    doc.text('Item', 40, y);
+    doc.text('Qty', 300, y, { align: 'right' });
+    doc.text('Price', 400, y, { align: 'right' });
+    doc.text('Total', 520, y, { align: 'right' });
+    y += 10;
+    doc.setLineWidth(0.5);
+    doc.line(40, y, 540, y);
+    y += 16;
+    const items = Array.isArray(r.items) ? r.items : [];
+    doc.setFontSize(11);
+    items.forEach((it) => {
+      const lineHeight = 16;
+      if (y > 760) {
+        doc.addPage();
+        y = 48;
+      }
+      const qty = Number(it.quantity || 0);
+      const price = Number(it.price || 0);
+      const total = qty * price;
+      const name = String(it.name || '');
+      doc.text(name.length > 40 ? name.slice(0, 40) + '…' : name, 40, y);
+      doc.text(String(qty), 300, y, { align: 'right' });
+      doc.text(formatMoney(price), 400, y, { align: 'right' });
+      doc.text(formatMoney(total), 520, y, { align: 'right' });
+      y += lineHeight;
+    });
+    y += 8;
+    doc.line(360, y, 540, y);
+    y += 18;
+    const subtotal = Number(r.subtotal || 0);
+    const grand = Number(r.grandTotal || subtotal);
+    doc.setFontSize(12);
+    doc.text('Subtotal', 400, y);
+    doc.text(formatMoney(subtotal), 540, y, { align: 'right' });
+    y += 18;
+    doc.setFontSize(12);
+    doc.text('Total', 400, y);
+    doc.text(formatMoney(grand), 540, y, { align: 'right' });
+    y += 24;
+    doc.setFontSize(10);
+    doc.text(`Cashier: ${r.userName || 'Unknown'}`, 40, y);
+    const filename = `receipt-${r.id || safeTs}.pdf`;
+    doc.save(filename);
+  };
+  const buildCurrentSaleReceipt = () => {
+    return {
+      id: undefined,
+      timestamp: new Date(),
+      customerName: customerName || 'Walk-in',
+      items: cart.map(ci => ({
+        medicineId: ci.medicine.id,
+        name: ci.medicine.name,
+        quantity: ci.quantity,
+        price: ci.medicine.price || 0
+      })),
+      subtotal: total,
+      tax: 0,
+      grandTotal: grandTotal,
+      userId: currentUser?.uid || 'unknown',
+      userName: currentUser?.name || 'Unknown User',
+    };
+  };
+  const handlePrintAndComplete = async () => {
+    setCheckoutModalOpen(false);
+    const receiptObj = await handleCheckout();
+    if (receiptObj) {
+      handlePrintReceipt(receiptObj);
+    }
+  };
+  const handleCompleteSaleOnly = async () => {
+    setCheckoutModalOpen(false);
+    await handleCheckout();
   };
  
   return (
@@ -395,7 +583,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
  
             <div className="space-y-2">
               <button
-                onClick={handleCheckout}
+                onClick={() => setCheckoutModalOpen(true)}
                 disabled={cart.length === 0}
                 className="w-full bg-blue-600 text-white py-3 rounded-md hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
@@ -461,6 +649,22 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                         <span>Total</span>
                         <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grand)}</span>
                       </div>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={() => handlePrintReceipt(r)}
+                        className="px-3 py-1 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300"
+                        aria-label="Print receipt"
+                      >
+                        Print
+                      </button>
+                      <button
+                        onClick={() => handleDownloadReceipt(r)}
+                        className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                        aria-label="Download receipt"
+                      >
+                        Download
+                      </button>
+                    </div>
                     </div>
                   </div>
                 </details>
@@ -469,6 +673,64 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           )}
         </div>
       </div>
+ 
+      {checkoutModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Confirm Sale</h2>
+              <button
+                onClick={() => setCheckoutModalOpen(false)}
+                className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-sm text-gray-600">Customer: {customerName || 'Walk-in'}</div>
+              <div className="space-y-1">
+                {cart.map((ci, idx) => (
+                  <div key={ci.medicine.id + '-' + ci.sellUnit + '-' + idx} className="flex justify-between text-sm">
+                    <span>{ci.medicine.name} x{ci.quantity} {ci.sellUnit}</span>
+                    <span>{formatMoney((ci.unitPrice || (ci.medicine.price || 0)) * ci.quantity)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t pt-2">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal</span>
+                  <span>{formatMoney(total)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-semibold">
+                  <span>Total</span>
+                  <span>{formatMoney(grandTotal)}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handlePrintAndComplete}
+                  className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-medium"
+                >
+                  Print & Complete Sale
+                </button>
+                <button
+                  onClick={handleCompleteSaleOnly}
+                  className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 font-medium"
+                >
+                  Complete Sale
+                </button>
+                <button
+                  onClick={() => setCheckoutModalOpen(false)}
+                  className="px-3 py-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

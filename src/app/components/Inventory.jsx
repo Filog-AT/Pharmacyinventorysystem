@@ -34,9 +34,7 @@ export function Inventory({
       ? Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
       : null;
     const soon = daysUntilExpiry !== null && daysUntilExpiry <= 90 && daysUntilExpiry > 0;
-    const u = (unit || '').toLowerCase();
-    const pillUnit = u === 'tablets' || u === 'capsules';
-    const lowThreshold = pillUnit ? 30 : 0;
+    const lowThreshold = 50;
     const low = lowThreshold > 0 && Number(quantity || 0) <= lowThreshold;
     if (expired) return 'bg-red-50';
     if (soon) return 'bg-yellow-50';
@@ -79,7 +77,7 @@ export function Inventory({
       s.count += totalQty;
       s.totalValue += totalQty * Number(m.price || 0);
       s.itemCount += 1;
-      if ((m.minStockLevel || 0) > 0 && (m.quantity || 0) <= (m.minStockLevel || 0)) {
+      if ((m.quantity || 0) <= 50) {
         s.lowStock += 1;
       }
     });

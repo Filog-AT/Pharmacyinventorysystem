@@ -1,6 +1,21 @@
-import { AlertTriangle, Calendar, Package, CheckCircle, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { AlertTriangle, Calendar, CheckCircle, X, Bell } from 'lucide-react';
 
 export function Notifications({ medicines }) {
+  const loadRead = () => {
+    try {
+      const raw = localStorage.getItem('pharmacy_read_notifications');
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+  const saveRead = (ids) => {
+    try {
+      localStorage.setItem('pharmacy_read_notifications', JSON.stringify(Array.from(ids)));
+    } catch {}
+  };
+
   const generateNotifications = () => {
     const notifications = [];
     const today = new Date();
@@ -9,8 +24,7 @@ export function Notifications({ medicines }) {
       if (!med || !med.id) return; // Skip invalid medicines
 
       // Low stock notifications
-      const isTabletsOrCapsules = med.unit === 'tablets' || med.unit === 'capsules' || med.subUnitType === 'tablets' || med.subUnitType === 'capsules';
-      const lowStockThreshold = isTabletsOrCapsules ? 50 : (med.minStockLevel || 0);
+      const lowStockThreshold = 50;
       
       if ((med.quantity || 0) <= lowStockThreshold) {
         notifications.push({
@@ -73,20 +87,20 @@ export function Notifications({ medicines }) {
     return notifications;
   };
 
-  const notifications = generateNotifications();
+  const [notifications, setNotifications] = useState(() => {
+    const base = generateNotifications();
+    const read = loadRead();
+    return base.map(n => ({ ...n, read: read.has(n.id) ? true : n.read }));
+  });
+  useEffect(() => {
+    const base = generateNotifications();
+    const read = loadRead();
+    setNotifications(base.map(n => ({ ...n, read: read.has(n.id) ? true : n.read })));
+  }, [medicines]);
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const getIcon = (type) => {
-    switch (type) {
-      case 'warning':
-        return AlertTriangle;
-      case 'error':
-        return X;
-      case 'success':
-        return CheckCircle;
-      default:
-        return Package;
-    }
+    return Bell;
   };
 
   const getColorClasses = (type) => {
@@ -114,7 +128,14 @@ export function Notifications({ medicines }) {
           <span className="bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium">
             {unreadCount} Unread
           </span>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium">
+          <button
+            onClick={() => {
+              const allIds = new Set(notifications.map(n => n.id));
+              saveRead(allIds);
+              setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium"
+          >
             Mark All Read
           </button>
         </div>
@@ -168,7 +189,15 @@ export function Notifications({ medicines }) {
                   </div>
                   <p className="text-sm opacity-90">{notification.message}</p>
                   {!notification.read && (
-                    <button className="mt-2 text-sm font-medium hover:underline">
+                    <button
+                      onClick={() => {
+                        const read = loadRead();
+                        read.add(notification.id);
+                        saveRead(read);
+                        setNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, read: true } : n));
+                      }}
+                      className="mt-2 text-sm font-medium hover:underline"
+                    >
                       Mark as read
                     </button>
                   )}

@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings, Menu, X, LogOut, UserCircle, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings, Menu, X, LogOut, UserCircle, ShoppingCart, TrendingUp } from 'lucide-react';
 import { SidebarItem } from '@/app/components/SidebarItem';
 
 const allMenuItems = [

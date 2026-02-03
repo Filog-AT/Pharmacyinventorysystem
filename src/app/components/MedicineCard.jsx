@@ -21,9 +21,7 @@ export function MedicineCard({ medicine, onEdit, onDelete }) {
 
   const isLowStock = (() => {
     const qty = Number(medicine.quantity || 0);
-    const unit = (medicine.unit || '').toLowerCase();
-    const pillUnit = unit === 'tablets' || unit === 'capsules';
-    const threshold = pillUnit ? 30 : Number(medicine.minStockLevel || 0);
+    const threshold = 50;
     return threshold > 0 && qty <= threshold;
   })();
 
