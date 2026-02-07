@@ -9,7 +9,7 @@ export function OrdersSuppliers() {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showOrderForm, setShowOrderForm] = useState(false);
-  const [orderForm, setOrderForm] = useState({ orderNumber: '', itemName: '', quantity: 0, supplierName: '', status: 'Pending', date: new Date().toISOString().slice(0,10) });
+  const [orderForm, setOrderForm] = useState({ orderNumber: '', itemName: '', quantity: '', supplierName: '', status: 'Pending', date: new Date().toISOString().slice(0,10) });
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [supplierForm, setSupplierForm] = useState({ name: '', phone: '' });
  
@@ -81,7 +81,7 @@ export function OrdersSuppliers() {
       const o = await orderService.getOrders();
       setOrders(o);
       setShowOrderForm(false);
-      setOrderForm({ orderNumber: '', itemName: '', quantity: 0, supplierName: '', status: 'Pending', date: new Date().toISOString().slice(0,10) });
+      setOrderForm({ orderNumber: '', itemName: '', quantity: '', supplierName: '', status: 'Pending', date: new Date().toISOString().slice(0,10) });
     } catch (e) {
       console.error('[OrdersSuppliers] add order error:', e);
     }
@@ -194,7 +194,7 @@ export function OrdersSuppliers() {
             <form onSubmit={handleOrderSubmit} className="space-y-3">
               <input className="w-full px-3 py-2 border rounded" placeholder="Order ID (optional)" value={orderForm.orderNumber} onChange={e => setOrderForm({ ...orderForm, orderNumber: e.target.value })} />
               <input className="w-full px-3 py-2 border rounded" placeholder="Item name" value={orderForm.itemName} onChange={e => setOrderForm({ ...orderForm, itemName: e.target.value })} />
-              <input className="w-full px-3 py-2 border rounded" placeholder="Quantity" type="number" value={orderForm.quantity} onChange={e => setOrderForm({ ...orderForm, quantity: Number(e.target.value) })} />
+              <input className="w-full px-3 py-2 border rounded" placeholder="Quantity" type="number" value={orderForm.quantity} onChange={e => setOrderForm({ ...orderForm, quantity: e.target.value })} />
               <input className="w-full px-3 py-2 border rounded" placeholder="Supplier name" value={orderForm.supplierName} onChange={e => setOrderForm({ ...orderForm, supplierName: e.target.value })} />
               <select className="w-full px-3 py-2 border rounded" value={orderForm.status} onChange={e => setOrderForm({ ...orderForm, status: e.target.value })}>
                 <option>Pending</option>

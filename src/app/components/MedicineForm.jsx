@@ -86,7 +86,7 @@ export function MedicineForm({ medicine, categories, onSubmit, onClose }) {
     const { name, value, type } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' ? parseFloat(value) || 0 : value
+      [name]: type === 'number' ? (value === '' ? '' : parseFloat(value)) : value
     }));
   };
 
@@ -103,7 +103,9 @@ export function MedicineForm({ medicine, categories, onSubmit, onClose }) {
     'Vitamins & Supplements'
   ];
 
-  const categoriesList = Array.isArray(categories) && categories.length > 0 ? categories : defaultCategories;
+  const categoriesList = Array.isArray(categories) && categories.length > 0
+    ? Array.from(new Set(categories.filter(Boolean)))
+    : defaultCategories;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">

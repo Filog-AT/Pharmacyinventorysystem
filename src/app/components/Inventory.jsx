@@ -1,4 +1,5 @@
 import { useState, useMemo, Fragment } from 'react';
+import { toast } from 'sonner';
 import { Search, Package, Plus, Pencil, Trash2, X } from 'lucide-react';
 import { MedicineForm } from './MedicineForm';
 
@@ -154,6 +155,11 @@ export function Inventory({
     e.preventDefault();
     const value = newCategory.trim();
     if (!value) return;
+    const exists = safeCategories.some(c => (c || '').toLowerCase() === value.toLowerCase());
+    if (exists) {
+      try { toast.warning(`Category "${value}" already exists`); } catch { alert(`Category "${value}" already exists`); }
+      return;
+    }
     onAddCategory?.(value);
     setNewCategory('');
     setShowAddForm(false);

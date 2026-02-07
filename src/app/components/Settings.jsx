@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen } from 'lucide-react';
 import { auditService } from '@/services/auditService';
+import { toast } from 'sonner';
 
 export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings, currentUser }) {
   const [localPharmacyName, setLocalPharmacyName] = useState(settings?.pharmacyName || '');
+  const [demoCount, setDemoCount] = useState('100');
+  const [demoMonths, setDemoMonths] = useState(6);
+  const [generating, setGenerating] = useState(false);
   return (
     <div>
       {/* Header */}
@@ -169,6 +173,113 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
         </div>
 
 
+      {/* Demo Data (Manager Only) */}
+      {userRole !== 'staff' && (
+        <div className="bg-card rounded-lg border p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <BookOpen className="w-6 h-6 text-blue-600" />
+            <h2 className="text-xl font-semibold text-card-foreground">Demo Sales Generator</h2>
+          </div>
+          <p className="text-muted-foreground mb-4">
+            Generate synthetic sales receipts to populate analytics. Writes directly to your receipts database.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">Number of sales</label>
+              <input
+                type="number"
+                min="50"
+                max="1000"
+                value={demoCount}
+                onChange={(e) => setDemoCount(e.target.value)}
+                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">Months span</label>
+              <select
+                value={demoMonths}
+                onChange={(e) => setDemoMonths(parseInt(e.target.value, 10))}
+                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+              >
+                <option value={6}>6 months</option>
+                <option value={7}>7 months</option>
+                <option value={8}>8 months</option>
+                <option value={9}>9 months</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                disabled={generating}
+                onClick={async () => {
+                  setGenerating(true);
+                  try {
+                    toast.info('Generating demo sales...');
+                    const svcModule = await import('@/services/receiptService');
+                    const receiptService = svcModule.receiptService;
+                    const dataModule = await import('@/data/sampleReceipts');
+                    const gen = dataModule.generateSampleReceipts;
+                    const all = gen(demoMonths);
+                    const parsedCount = parseInt(demoCount || '0', 10);
+                    const targetCount = isNaN(parsedCount) ? 100 : Math.max(50, Math.min(1000, parsedCount));
+                    let target = [];
+                    if (all.length >= targetCount) {
+                      const step = Math.max(1, Math.floor(all.length / targetCount));
+                      for (let i = 0; i < targetCount; i++) {
+                        const idx = Math.min(all.length - 1, i * step);
+                        target.push(all[idx]);
+                      }
+                    } else {
+                      target = all.slice();
+                      const need = targetCount - target.length;
+                      const now = new Date();
+                      for (let i = 0; i < need; i++) {
+                        const base = all[Math.floor(Math.random() * all.length)];
+                        const ts = new Date(
+                          now.getFullYear(),
+                          now.getMonth() - Math.floor(Math.random() * demoMonths),
+                          Math.max(1, Math.floor(Math.random() * 28)),
+                          Math.floor(Math.random() * 10) + 9,
+                          Math.floor(Math.random() * 60)
+                        );
+                        target.push({ ...base, timestamp: ts });
+                      }
+                    }
+                    let created = 0;
+                    for (const r of target) {
+                      const { id, ...payload } = r;
+                      await receiptService.addReceipt(payload);
+                      created += 1;
+                    }
+                    toast.success(`Generated ${created} demo sales across ${demoMonths} months`);
+                    try {
+                      await auditService.logAction({
+                        userId: currentUser?.uid || 'unknown',
+                        userName: currentUser?.name || 'Unknown User',
+                        userRole: currentUser?.role || 'unknown',
+                        action: 'DEMO_SALES_GENERATE',
+                        entityType: 'receipts',
+                        entityId: 'bulk',
+                        entityName: 'Demo Sales Generator',
+                        details: { count: targetCount, months: demoMonths },
+                      });
+                    } catch {}
+                  } catch (e) {
+                    toast.error('Failed to generate demo sales');
+                    console.error(e);
+                  } finally {
+                    setGenerating(false);
+                  }
+                }}
+                className="w-full bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {generating ? 'Generating...' : 'Generate Demo Sales'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
         {/* Display Settings */}
         <div className="bg-card rounded-lg border p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -186,18 +297,6 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                 <option value="Light">Light</option>
                 <option value="Dark">Dark</option>
                 <option value="Auto">Auto</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Language</label>
-              <select
-                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
-                value={settings?.language || 'English'}
-                onChange={(e) => onUpdateSettings?.({ ...settings, language: e.target.value })}
-              >
-                <option value="English">English</option>
-                <option value="Spanish">Spanish</option>
-                <option value="French">French</option>
               </select>
             </div>
           </div>

@@ -22,6 +22,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   const [customerName, setCustomerName] = useState('');
   const [receipts, setReceipts] = useState([]);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [quantityInputs, setQuantityInputs] = useState({});
  
   useEffect(() => {
     (async () => {
@@ -539,16 +540,35 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                         <input
                           type="number"
                           min="1"
-                          value={item.quantity}
+                          value={
+                            quantityInputs[`${item.medicine.id}-${item.sellUnit}`] !== undefined
+                              ? quantityInputs[`${item.medicine.id}-${item.sellUnit}`]
+                              : String(item.quantity)
+                          }
                           onChange={(e) => {
-                            const v = Math.max(1, parseInt(e.target.value || '1', 10));
-                            setCart(prev => prev.map(ci => {
-                              if (ci.medicine.id === item.medicine.id && ci.sellUnit === item.sellUnit) {
-                                const maxQ = getMaxSaleQuantity(ci.medicine, ci.sellUnit);
-                                return { ...ci, quantity: Math.min(v, Math.max(1, maxQ)) };
-                              }
-                              return ci;
-                            }));
+                            const key = `${item.medicine.id}-${item.sellUnit}`;
+                            const val = e.target.value;
+                            setQuantityInputs(prev => ({ ...prev, [key]: val }));
+                          }}
+                          onBlur={(e) => {
+                            const key = `${item.medicine.id}-${item.sellUnit}`;
+                            const raw = e.target.value;
+                            const parsed = parseInt(raw, 10);
+                            setQuantityInputs(prev => {
+                              const next = { ...prev };
+                              delete next[key];
+                              return next;
+                            });
+                            if (!isNaN(parsed)) {
+                              setCart(prev => prev.map(ci => {
+                                if (ci.medicine.id === item.medicine.id && ci.sellUnit === item.sellUnit) {
+                                  const maxQ = getMaxSaleQuantity(ci.medicine, ci.sellUnit);
+                                  const v = Math.max(1, Math.min(parsed, Math.max(1, maxQ)));
+                                  return { ...ci, quantity: v };
+                                }
+                                return ci;
+                              }));
+                            }
                           }}
                           className="w-16 text-center font-medium bg-white border rounded"
                         />
@@ -617,6 +637,92 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             className="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
           >
             Clear Receipts History
+          </button>
+          <button
+            onClick={() => {
+              if (!Array.isArray(receipts) || receipts.length === 0) {
+                alert('No receipts to download');
+                return;
+              }
+              const headers = [
+                'receipt_id',
+                'timestamp',
+                'customer_name',
+                'user_name',
+                'user_id',
+                'item_medicine_id',
+                'item_name',
+                'item_quantity',
+                'item_price',
+                'item_total',
+                'subtotal',
+                'grand_total'
+              ];
+              const lines = [headers.join(',')];
+              receipts.forEach((r) => {
+                const ts = r?.timestamp && typeof r.timestamp.toDate === 'function'
+                  ? r.timestamp.toDate()
+                  : new Date(r.timestamp);
+                const base = {
+                  id: r.id || '',
+                  tsISO: ts.toISOString(),
+                  customer: r.customerName || 'Walk-in',
+                  userName: r.userName || 'Unknown',
+                  userId: r.userId || '',
+                  subtotal: Number(r.subtotal || 0),
+                  grand: Number(r.grandTotal || Number(r.subtotal || 0)),
+                };
+                const items = Array.isArray(r.items) ? r.items : [];
+                if (items.length === 0) {
+                  lines.push([
+                    base.id,
+                    base.tsISO,
+                    base.customer,
+                    base.userName,
+                    base.userId,
+                    '',
+                    '',
+                    '',
+                    '',
+                    '',
+                    base.subtotal,
+                    base.grand
+                  ].join(','));
+                } else {
+                  items.forEach((it) => {
+                    const qty = Number(it.quantity || 0);
+                    const price = Number(it.price || 0);
+                    const total = qty * price;
+                    lines.push([
+                      base.id,
+                      base.tsISO,
+                      base.customer,
+                      base.userName,
+                      base.userId,
+                      it.medicineId || '',
+                      (it.name || '').replace(/[,\\n]/g, ' '),
+                      qty,
+                      price,
+                      total,
+                      base.subtotal,
+                      base.grand
+                    ].join(','));
+                  });
+                }
+              });
+              const blob = new Blob([lines.join('\\n')], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'receipts-history.csv';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+            className="ml-2 px-3 py-1 rounded-md bg-green-600 text-white hover:bg-green-700"
+          >
+            Download All (CSV)
           </button>
         </div>
         <div className="space-y-2">

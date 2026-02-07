@@ -38,9 +38,13 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   useEffect(() => {
     (async () => {
       const svc = await loadReceiptService();
-      if (svc) {
-        const data = await svc.getRecentReceipts(500);
-        setReceipts(data || []);
+      try {
+        if (svc) {
+          const data = await svc.getRecentReceipts(500);
+          setReceipts(data || []);
+        }
+      } catch {
+        setReceipts([]);
       }
     })();
   }, []);
@@ -128,24 +132,34 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
  
   const salesAggregates = useMemo(() => {
     const now = new Date();
-    const thisYear = now.getFullYear();
-    const thisMonth = now.getMonth();
     let todayTotal = 0;
-    const monthlyTotals = Array(12).fill(0);
+    const monthsBack = 12;
+    const monthKeys = [];
+    const monthTotals = new Map();
     const yearlyTotals = new Map();
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthKeys.push({ key, date: d });
+      monthTotals.set(key, 0);
+    }
     (receipts || []).forEach(r => {
       const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      const amount = r.grandTotal || r.subtotal || 0;
+      const amount = Number(r.grandTotal || r.subtotal || 0);
       if (ts.toDateString() === now.toDateString()) {
         todayTotal += amount;
       }
-      if (ts.getFullYear() === thisYear) {
-        monthlyTotals[ts.getMonth()] += amount;
+      const mkey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
+      if (monthTotals.has(mkey)) {
+        monthTotals.set(mkey, (monthTotals.get(mkey) || 0) + amount);
       }
       yearlyTotals.set(ts.getFullYear(), (yearlyTotals.get(ts.getFullYear()) || 0) + amount);
     });
     const yearlyData = Array.from(yearlyTotals.entries()).map(([year, total]) => ({ year, total }));
-    const monthlyData = monthlyTotals.map((total, idx) => ({ month: idx + 1, total }));
+    const monthlyData = monthKeys.map(({ key, date }) => ({
+      month: date.getMonth() + 1,
+      total: monthTotals.get(key) || 0
+    }));
     return { todayTotal, monthlyData, yearlyData };
   }, [receipts]);
 
@@ -161,21 +175,34 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
   const monthlyCounts = useMemo(() => {
     const now = new Date();
-    const thisYear = now.getFullYear();
-    const counts = Array(12).fill(0);
+    const monthsBack = 12;
+    const monthKeys = [];
+    const countsMap = new Map();
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthKeys.push({ key, date: d });
+      countsMap.set(key, 0);
+    }
     (receipts || []).forEach(r => {
       const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      if (ts.getFullYear() === thisYear) {
-        counts[ts.getMonth()] += 1;
+      const key = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
+      if (countsMap.has(key)) {
+        countsMap.set(key, (countsMap.get(key) || 0) + 1);
       }
     });
-    return counts.map((count, idx) => ({ month: idx + 1, count, label: monthNames[idx] }));
+    return monthKeys.map(({ key, date }) => ({
+      month: date.getMonth() + 1,
+      count: countsMap.get(key) || 0,
+      label: monthNames[date.getMonth()]
+    }));
   }, [receipts]);
 
   const last7Revenue = useMemo(() => {
     const md = salesAggregates.monthlyData || [];
-    return md.slice(-7).map(d => ({ ...d, label: monthNames[(d.month - 1) % 12] }));
-  }, [salesAggregates, monthNames]);
+    const last = md.slice(-7);
+    return last.map(d => ({ ...d, label: monthNames[(d.month - 1) % 12] }));
+  }, [salesAggregates]);
 
   const last7Counts = useMemo(() => {
     return monthlyCounts.slice(-7);

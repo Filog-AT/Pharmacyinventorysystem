@@ -136,9 +136,13 @@ function AppSimple() {
   const [settings, setSettings] = useState(() => {
     try {
       const saved = localStorage.getItem('pharmacy_settings');
-      return saved ? JSON.parse(saved) : { pharmacyName: 'PharmaCare', theme: 'Light', language: 'English' };
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (parsed && typeof parsed === 'object') {
+        return { pharmacyName: parsed.pharmacyName || 'PharmaCare', theme: parsed.theme || 'Light' };
+      }
+      return { pharmacyName: 'PharmaCare', theme: 'Light' };
     } catch {
-      return { pharmacyName: 'PharmaCare', theme: 'Light', language: 'English' };
+      return { pharmacyName: 'PharmaCare', theme: 'Light' };
     }
   });
 
@@ -157,17 +161,7 @@ function AppSimple() {
     }
   }, [settings.theme]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const lang = settings.language?.toLowerCase().startsWith('en')
-      ? 'en'
-      : settings.language?.toLowerCase().startsWith('span')
-      ? 'es'
-      : settings.language?.toLowerCase().startsWith('fr')
-      ? 'fr'
-      : 'en';
-    root.setAttribute('lang', lang);
-  }, [settings.language]);
+  // Language removed from settings; keep browser default
 
   // Load categories from Firestore in background
   useEffect(() => {
@@ -621,7 +615,7 @@ function AppSimple() {
       case 'reports':
         return <Reports medicines={medicines} />;
       case 'notifications':
-        return <Notifications medicines={medicines} />;
+        return <Notifications medicines={medicines} onNavigateToTab={setActivePage} />;
       case 'settings':
         return (
           <Settings

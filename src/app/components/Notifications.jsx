@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Calendar, CheckCircle, X, Bell } from 'lucide-react';
 
-export function Notifications({ medicines }) {
+export function Notifications({ medicines, onNavigateToTab }) {
   const loadRead = () => {
     try {
       const raw = localStorage.getItem('pharmacy_read_notifications');
@@ -98,6 +98,11 @@ export function Notifications({ medicines }) {
     setNotifications(base.map(n => ({ ...n, read: read.has(n.id) ? true : n.read })));
   }, [medicines]);
   const unreadCount = notifications.filter(n => !n.read).length;
+  const [filterType, setFilterType] = useState('all'); // 'all' | 'error' | 'warning' | 'info' | 'success'
+  const visibleNotifications = notifications.filter(n => {
+    if (filterType === 'all') return true;
+    return n.type === filterType || (filterType === 'info' && (n.type === 'info' || n.type === 'success'));
+  });
 
   const getIcon = (type) => {
     return Bell;
@@ -143,33 +148,45 @@ export function Notifications({ medicines }) {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
+        <button
+          onClick={() => setFilterType('all')}
+          className={`text-left rounded-lg border-2 p-4 ${filterType==='all' ? 'bg-gray-200 border-gray-300' : 'bg-white border-gray-200'}`}
+        >
           <p className="text-sm text-gray-600 mb-1">Total</p>
           <p className="text-2xl font-bold text-gray-900">{notifications.length}</p>
-        </div>
-        <div className="bg-red-100 border-2 border-red-200 rounded-lg p-4">
+        </button>
+        <button
+          onClick={() => setFilterType('error')}
+          className={`text-left rounded-lg border-2 p-4 ${filterType==='error' ? 'bg-red-200 border-red-300' : 'bg-red-100 border-red-200'}`}
+        >
           <p className="text-sm text-red-800 mb-1">Critical</p>
           <p className="text-2xl font-bold text-red-900">
             {notifications.filter(n => n.type === 'error').length}
           </p>
-        </div>
-        <div className="bg-yellow-100 border-2 border-yellow-200 rounded-lg p-4">
+        </button>
+        <button
+          onClick={() => setFilterType('warning')}
+          className={`text-left rounded-lg border-2 p-4 ${filterType==='warning' ? 'bg-yellow-200 border-yellow-300' : 'bg-yellow-100 border-yellow-200'}`}
+        >
           <p className="text-sm text-yellow-800 mb-1">Warnings</p>
           <p className="text-2xl font-bold text-yellow-900">
             {notifications.filter(n => n.type === 'warning').length}
           </p>
-        </div>
-        <div className="bg-blue-100 border-2 border-blue-200 rounded-lg p-4">
+        </button>
+        <button
+          onClick={() => setFilterType('info')}
+          className={`text-left rounded-lg border-2 p-4 ${filterType==='info' ? 'bg-blue-200 border-blue-300' : 'bg-blue-100 border-blue-200'}`}
+        >
           <p className="text-sm text-blue-800 mb-1">Info</p>
           <p className="text-2xl font-bold text-blue-900">
             {notifications.filter(n => n.type === 'info' || n.type === 'success').length}
           </p>
-        </div>
+        </button>
       </div>
 
       {/* Notifications List */}
       <div className="space-y-3">
-        {notifications.map(notification => {
+        {visibleNotifications.map(notification => {
           const Icon = getIcon(notification.type);
           return (
             <div
@@ -177,6 +194,13 @@ export function Notifications({ medicines }) {
               className={`rounded-lg border-2 p-4 transition-all ${
                 notification.read ? 'bg-gray-50 border-gray-200 opacity-60' : getColorClasses(notification.type)
               }`}
+              onClick={() => {
+                if (notification.type === 'error' || notification.type === 'warning') {
+                  onNavigateToTab?.('inventory');
+                } else {
+                  onNavigateToTab?.('dashboard');
+                }
+              }}
             >
               <div className="flex gap-4">
                 <div className={`flex-shrink-0 p-2 rounded-lg ${notification.read ? 'bg-gray-200' : 'bg-white/50'}`}>
