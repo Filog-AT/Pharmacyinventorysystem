@@ -6,6 +6,8 @@ import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
 import { Customers } from './components/Customers';
 import { Reports } from './components/Reports';
+import { Receipts } from './components/Receipts';
+import { SalesPOS } from './components/SalesPOS';
 import { Notifications } from './components/Notifications';
 import { Settings } from './components/Settings';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -24,75 +26,8 @@ type CurrentUser = {
   role: string;
 } | null;
 
-// Sample data
-const initialMedicines = [
-  {
-    id: '1',
-    name: 'Amoxicillin',
-    category: 'Antibiotic',
-    quantity: 150,
-    unit: 'tablets',
-    minStockLevel: 50,
-    expiryDate: '2026-08-15',
-    supplier: 'PharmaCorp',
-    price: 12.99
-  },
-  {
-    id: '2',
-    name: 'Ibuprofen',
-    category: 'Painkiller',
-    quantity: 25,
-    unit: 'bottles',
-    minStockLevel: 30,
-    expiryDate: '2025-12-20',
-    supplier: 'MediSupply Inc',
-    price: 8.50
-  },
-  {
-    id: '3',
-    name: 'Lisinopril',
-    category: 'Cardiovascular',
-    quantity: 200,
-    unit: 'tablets',
-    minStockLevel: 100,
-    expiryDate: '2026-03-10',
-    supplier: 'HeartMed Solutions',
-    price: 15.75
-  },
-  {
-    id: '4',
-    name: 'Metformin',
-    category: 'Diabetes',
-    quantity: 5,
-    unit: 'boxes',
-    minStockLevel: 20,
-    expiryDate: '2026-01-25',
-    supplier: 'DiabetesCare Ltd',
-    price: 22.00
-  },
-  {
-    id: '5',
-    name: 'Cetirizine',
-    category: 'Antihistamine',
-    quantity: 80,
-    unit: 'tablets',
-    minStockLevel: 40,
-    expiryDate: '2025-11-30',
-    supplier: 'AllergyRelief Co',
-    price: 9.25
-  },
-  {
-    id: '6',
-    name: 'Omeprazole',
-    category: 'Gastrointestinal',
-    quantity: 120,
-    unit: 'capsules',
-    minStockLevel: 60,
-    expiryDate: '2026-06-18',
-    supplier: 'GastroHealth',
-    price: 18.50
-  }
-];
+// Sample data removed to avoid structure mismatch with the new batch system.
+const initialMedicines: any[] = [];
 
 function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser>(null);
@@ -150,26 +85,13 @@ function App() {
       try {
         const firebaseMedicines = await medicineService.getMedicines();
         console.log('[App] Got medicines from Firebase:', firebaseMedicines.length);
-        if (firebaseMedicines.length === 0) {
-          console.log('[App] No medicines found, populating with sample data...');
-          // If no medicines exist, populate with sample data
-          for (const medicine of initialMedicines) {
-            await medicineService.addMedicine(medicine);
-          }
-          const populatedMedicines = await medicineService.getMedicines();
-          setMedicines(populatedMedicines);
-        } else {
-          setMedicines(firebaseMedicines);
-        }
+        setMedicines(firebaseMedicines);
       } catch (error) {
         console.error('[App] Failed to load medicines from Firebase:', error);
-        // Fallback to local initial data if Firebase fails
-        console.log('[App] Using fallback data');
-        setMedicines(initialMedicines);
+        setError('Failed to load medicines from Firebase');
       }
     };
 
-    // Only load medicines if not already loading
     loadMedicines();
   }, [setMedicines]);
 
@@ -254,25 +176,13 @@ function App() {
 
   const handleAddMedicine = async (medicineData: any) => {
     try {
-      const normName = (medicineData.name || '').trim().toLowerCase();
-      const existing = medicines.find(m =>
-        (m.name || '').trim().toLowerCase() === normName &&
-        (m.expiryDate || '') === (medicineData.expiryDate || '') &&
-        (m.unit || '') === (medicineData.unit || '')
-      );
-      if (existing) {
-        const newQty = (existing.quantity || 0) + (medicineData.quantity || 0);
-        await medicineService.updateMedicine(existing.id, { quantity: newQty });
-        updateMedicine(existing.id, { ...existing, quantity: newQty });
-      } else {
-        const id = await medicineService.addMedicine(medicineData);
-        addMedicine({
-          ...medicineData,
-          id
-        });
-      }
-    } catch (error) {
+      const id = await medicineService.addMedicine(medicineData);
+      // Fetch full medicine with calculated totalQuantity
+      const medicines = await medicineService.getMedicines();
+      setMedicines(medicines);
+    } catch (error: any) {
       console.error('Failed to add medicine:', error);
+      alert(error.message || 'Failed to add medicine');
       setError('Failed to add medicine');
     }
   };
@@ -280,61 +190,56 @@ function App() {
   const handleUpdateMedicine = async (id: string, medicineData: any) => {
     try {
       await medicineService.updateMedicine(id, medicineData);
-      updateMedicine(id, {
-        ...medicineData,
-        id
-      });
+      const updatedMedicines = await medicineService.getMedicines();
+      setMedicines(updatedMedicines);
     } catch (error) {
       console.error('Failed to update medicine:', error);
       setError('Failed to update medicine');
     }
   };
 
-  const handleDeleteMedicine = async (id: string, batchId?: string) => {
-    if (batchId) {
-      if (confirm('Are you sure you want to delete this batch?')) {
-        const medicine = medicines.find(m => m.id === id);
-        if (!medicine) return;
-
-        if ((!medicine.batches || medicine.batches.length === 0) && batchId === `${id}-single`) {
-          try {
-            await medicineService.deleteMedicine(id);
-            deleteMedicine(id);
-          } catch (error) {
-            console.error('Failed to delete medicine:', error);
-            setError('Failed to delete medicine');
-          }
-          return;
-        }
-
-        const currentBatches = medicine.batches || [];
-        const newBatches = currentBatches.filter((b: any) => b.batchId !== batchId);
-        const newQty = newBatches.reduce((sum: number, b: any) => sum + Number(b.quantityPieces || 0), 0);
-        
-        const updated = {
-          ...medicine,
-          quantity: newQty,
-          batches: newBatches
-        };
-
-        try {
-          await medicineService.updateMedicine(id, updated);
-          updateMedicine(id, updated);
-        } catch (error) {
-          console.error('Failed to delete batch:', error);
-          setError('Failed to delete batch');
-        }
+  const handleDeleteMedicine = async (id: string) => {
+    if (confirm('Are you sure you want to delete this medicine? All batch data will be lost.')) {
+      try {
+        await medicineService.deleteMedicine(id);
+        deleteMedicine(id);
+      } catch (error) {
+        console.error('Failed to delete medicine:', error);
+        setError('Failed to delete medicine');
       }
-    } else {
-      if (confirm('Are you sure you want to delete this medicine?')) {
-        try {
-          await medicineService.deleteMedicine(id);
-          deleteMedicine(id);
-        } catch (error) {
-          console.error('Failed to delete medicine:', error);
-          setError('Failed to delete medicine');
-        }
-      }
+    }
+  };
+
+  const handleAddBatch = async (medicineId: string, batchData: any) => {
+    try {
+      await medicineService.addBatch(medicineId, batchData);
+      const updatedMedicines = await medicineService.getMedicines();
+      setMedicines(updatedMedicines);
+    } catch (error) {
+      console.error('Failed to add batch:', error);
+      setError('Failed to add batch');
+    }
+  };
+
+  const handleUpdateBatch = async (medicineId: string, batchId: string, batchData: any) => {
+    try {
+      await medicineService.updateBatch(medicineId, batchId, batchData);
+      const updatedMedicines = await medicineService.getMedicines();
+      setMedicines(updatedMedicines);
+    } catch (error) {
+      console.error('Failed to update batch:', error);
+      setError('Failed to update batch');
+    }
+  };
+
+  const handleDeleteBatch = async (medicineId: string, batchId: string) => {
+    try {
+      await medicineService.deleteBatch(medicineId, batchId);
+      const updatedMedicines = await medicineService.getMedicines();
+      setMedicines(updatedMedicines);
+    } catch (error) {
+      console.error('Failed to delete batch:', error);
+      setError('Failed to delete batch');
     }
   };
 
@@ -361,11 +266,21 @@ function App() {
             onAddMedicine={handleAddMedicine}
             onUpdateMedicine={handleUpdateMedicine}
             onDeleteMedicine={handleDeleteMedicine}
+            onAddBatch={handleAddBatch}
+            onUpdateBatch={handleUpdateBatch}
+            onDeleteBatch={handleDeleteBatch}
             currentUser={currentUser}
           />
         );
       case 'customers':
         return <Customers />;
+      case 'receipts':
+        return (
+          <SalesPOS
+            medicines={medicines}
+            currentUser={currentUser}
+          />
+        );
       case 'reports':
         return <Reports medicines={medicines} />;
       case 'notifications':

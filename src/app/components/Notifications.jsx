@@ -24,43 +24,47 @@ export function Notifications({ medicines, onNavigateToTab }) {
       if (!med || !med.id) return; // Skip invalid medicines
 
       // Low stock notifications
-      const lowStockThreshold = 50;
+      const qty = Number(med.totalQuantity || 0);
+      const lowStockThreshold = med.minStockLevel || 50;
       
-      if ((med.quantity || 0) <= lowStockThreshold) {
+      if (qty <= lowStockThreshold) {
         notifications.push({
           id: `low-${med.id}`,
           type: 'warning',
           title: 'Low Stock Alert',
-          message: `${med.name || 'Unknown medicine'} is running low. Current stock: ${med.quantity || 0} ${med.unit || 'units'}`,
-          time: '2 hours ago',
+          message: `${med.name || 'Unknown medicine'} is running low. Current stock: ${qty} ${med.unit || 'units'}`,
+          time: 'Recent',
           read: false
         });
       }
 
-      // Expiry notifications
-      if (med.expiryDate) {
-        const expiryDate = new Date(med.expiryDate);
-        const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
-        if (daysUntilExpiry < 0) {
-          notifications.push({
-            id: `expired-${med.id}`,
-            type: 'error',
-            title: 'Expired Medicine',
-            message: `${med.name || 'Unknown medicine'} has expired. Please remove from inventory.`,
-            time: '1 day ago',
-            read: false
-          });
-        } else if (daysUntilExpiry <= 30) {
-          notifications.push({
-            id: `expiring-${med.id}`,
-            type: 'warning',
-            title: 'Expiring Soon',
-            message: `${med.name || 'Unknown medicine'} will expire in ${daysUntilExpiry} days.`,
-            time: '3 hours ago',
-            read: false
-          });
-        }
+      // Expiry notifications from batches
+      if (med.batches && Array.isArray(med.batches)) {
+        med.batches.forEach(batch => {
+          if (!batch.expiryDate) return;
+          const expiryDate = new Date(batch.expiryDate);
+          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysUntilExpiry < 0) {
+            notifications.push({
+              id: `expired-${med.id}-${batch.id}`,
+              type: 'error',
+              title: 'Expired Batch',
+              message: `${med.name} (Batch: ${batch.batchNumber}) has expired. Please remove ${batch.quantity} units from inventory.`,
+              time: 'Alert',
+              read: false
+            });
+          } else if (daysUntilExpiry <= 90) { // Notify 3 months before
+            notifications.push({
+              id: `expiring-${med.id}-${batch.id}`,
+              type: 'warning',
+              title: 'Batch Expiring Soon',
+              message: `${med.name} (Batch: ${batch.batchNumber}) will expire in ${daysUntilExpiry} days.`,
+              time: 'Alert',
+              read: false
+            });
+          }
+        });
       }
     });
 
@@ -90,12 +94,28 @@ export function Notifications({ medicines, onNavigateToTab }) {
   const [notifications, setNotifications] = useState(() => {
     const base = generateNotifications();
     const read = loadRead();
-    return base.map(n => ({ ...n, read: read.has(n.id) ? true : n.read }));
+    const isRead = (id) => {
+      if (read.has(id)) return true;
+      if (id.startsWith('expiring-')) {
+        return read.has(id.replace('expiring-', 'expired-'));
+      }
+      if (id.startsWith('expired-')) {
+        return read.has(id.replace('expired-', 'expiring-'));
+      }
+      return false;
+    };
+    return base.map(n => ({ ...n, read: isRead(n.id) ? true : n.read }));
   });
   useEffect(() => {
     const base = generateNotifications();
     const read = loadRead();
-    setNotifications(base.map(n => ({ ...n, read: read.has(n.id) ? true : n.read })));
+    const isRead = (id) => {
+      if (read.has(id)) return true;
+      if (id.startsWith('expiring-')) return read.has(id.replace('expiring-', 'expired-'));
+      if (id.startsWith('expired-')) return read.has(id.replace('expired-', 'expiring-'));
+      return false;
+    };
+    setNotifications(base.map(n => ({ ...n, read: isRead(n.id) ? true : n.read })));
   }, [medicines]);
   const unreadCount = notifications.filter(n => !n.read).length;
   const [filterType, setFilterType] = useState('all'); // 'all' | 'error' | 'warning' | 'info' | 'success'
@@ -111,13 +131,13 @@ export function Notifications({ medicines, onNavigateToTab }) {
   const getColorClasses = (type) => {
     switch (type) {
       case 'warning':
-        return 'bg-yellow-100 border-yellow-200 text-yellow-800';
+        return 'bg-amber-100 border-amber-300 text-amber-900 shadow-sm ring-1 ring-amber-400/20';
       case 'error':
-        return 'bg-red-100 border-red-200 text-red-800';
+        return 'bg-rose-100 border-rose-300 text-rose-900 shadow-sm ring-1 ring-rose-400/20';
       case 'success':
-        return 'bg-green-100 border-green-200 text-green-800';
+        return 'bg-emerald-100 border-emerald-300 text-emerald-900';
       default:
-        return 'bg-blue-100 border-blue-200 text-blue-800';
+        return 'bg-sky-100 border-sky-300 text-sky-900';
     }
   };
 
@@ -125,13 +145,22 @@ export function Notifications({ medicines, onNavigateToTab }) {
     <div>
       {/* Header */}
       <div className="mb-6 flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Notifications</h1>
-          <p className="text-gray-600">Stay updated with important alerts and messages</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onNavigateToTab?.('dashboard')}
+            className="px-3 py-2 border rounded-md hover:bg-gray-50 text-sm"
+            aria-label="Back"
+          >
+            ← Back
+          </button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Notifications</h1>
+            <p className="text-gray-600">Stay updated with important alerts and messages</p>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <span className="bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-            {unreadCount} Unread
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-700 border rounded-full px-3 py-1 bg-white select-none">
+            {unreadCount} unread
           </span>
           <button
             onClick={() => {
@@ -195,6 +224,16 @@ export function Notifications({ medicines, onNavigateToTab }) {
                 notification.read ? 'bg-gray-50 border-gray-200 opacity-60' : getColorClasses(notification.type)
               }`}
               onClick={() => {
+                // Mark as read when clicked
+                if (!notification.read) {
+                  const read = loadRead();
+                  read.add(notification.id);
+                  saveRead(read);
+                  setNotifications(prev => prev.map(n => 
+                    n.id === notification.id ? { ...n, read: true } : n
+                  ));
+                }
+
                 if (notification.type === 'error' || notification.type === 'warning') {
                   onNavigateToTab?.('inventory');
                 } else {
@@ -214,7 +253,8 @@ export function Notifications({ medicines, onNavigateToTab }) {
                   <p className="text-sm opacity-90">{notification.message}</p>
                   {!notification.read && (
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         const read = loadRead();
                         read.add(notification.id);
                         saveRead(read);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, ShoppingCart, X, Minus, Plus } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { auditService } from '@/services/auditService';
+import { medicineService } from '@/services/medicineService';
  
 let receiptServiceModule = null;
 const loadReceiptService = async () => {
@@ -23,6 +24,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   const [receipts, setReceipts] = useState([]);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [quantityInputs, setQuantityInputs] = useState({});
+  const [amountReceived, setAmountReceived] = useState('');
+  const [saleSuccess, setSaleSuccess] = useState(null);
  
   useEffect(() => {
     (async () => {
@@ -41,49 +44,53 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
       const db = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
       return da - db;
     });
+
+  const isBottle = (m) => {
+    const form = String(m?.dosageForm || '').toLowerCase().trim();
+    const unit = String(m?.unit || '').toLowerCase().trim();
+    const bottleForms = new Set(['bottle']);
+    const bottleUnits = new Set(['bottle', 'bottles']);
+    return bottleForms.has(form) || bottleUnits.has(unit);
+  };
  
   const getUnitMultiplier = (m, unit) => {
-    let blister = Number(m.blisterCount || 0);
-    let tablet = Number(m.tabletCount || 0);
-    if ((!blister || !tablet) && Array.isArray(m.batches) && m.batches.length > 0) {
+    // Get multipliers from the first batch if available, otherwise default to 1
+    let blistersPerBox = 1;
+    let unitsPerBlister = 1;
+
+    if (Array.isArray(m.batches) && m.batches.length > 0) {
       const b = m.batches[0];
-      blister = Number(b?.blisterCount || blister || 0);
-      tablet = Number(b?.tabletCount || tablet || 0);
+      blistersPerBox = Number(b?.blistersPerBox || 1);
+      unitsPerBlister = Number(b?.unitsPerBlister || 1);
     }
+
     if (unit === 'blister') {
-      return tablet > 0 ? tablet : 1;
+      return unitsPerBlister;
     }
     if (unit === 'box') {
-      const t = tablet > 0 ? tablet : 1;
-      const b = blister > 0 ? blister : 1;
-      return t * b;
+      return blistersPerBox * unitsPerBlister;
     }
-    return 1;
+    return 1; // 'piece' or 'unit'
   };
   const getTabletCount = (m) => {
-    let tablet = Number(m.tabletCount || 0);
-    if (!tablet && Array.isArray(m.batches) && m.batches.length > 0) {
-      tablet = Number(m.batches[0]?.tabletCount || 0);
+    if (Array.isArray(m.batches) && m.batches.length > 0) {
+      // Find the first non-expired batch with stock
+      const today = new Date();
+      const validBatch = m.batches.find(b => new Date(b.expiryDate) >= today && b.quantity > 0) || m.batches[0];
+      return Number(validBatch?.unitsPerBlister || 0);
     }
-    return tablet;
+    return 0;
   };
   const getBoxTabletCount = (m) => {
-    let blister = Number(m.blisterCount || 0);
-    let tablet = Number(m.tabletCount || 0);
-    if ((!blister || !tablet) && Array.isArray(m.batches) && m.batches.length > 0) {
-      const b = m.batches[0];
-      blister = Number(b?.blisterCount || blister || 0);
-      tablet = Number(b?.tabletCount || tablet || 0);
+    if (Array.isArray(m.batches) && m.batches.length > 0) {
+      const today = new Date();
+      const validBatch = m.batches.find(b => new Date(b.expiryDate) >= today && b.quantity > 0) || m.batches[0];
+      return Number(validBatch?.blistersPerBox || 0) * Number(validBatch?.unitsPerBlister || 0);
     }
-    const t = tablet > 0 ? tablet : 0;
-    const b = blister > 0 ? blister : 0;
-    return t * b;
+    return 0;
   };
   const getAvailablePieces = (m) => {
-    if (Array.isArray(m.batches) && m.batches.length > 0) {
-      return m.batches.reduce((sum, b) => sum + Number(b?.quantityPieces || 0), 0);
-    }
-    return Number(m.quantity || 0);
+    return Number(m.totalQuantity || 0);
   };
   const getMaxSaleQuantity = (m, unit) => {
     const available = getAvailablePieces(m);
@@ -131,58 +138,22 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
  
   const handleCheckout = async () => {
     if (cart.length === 0) return;
- 
+
     try {
-      for (const item of cart) {
-        const multiplier = getUnitMultiplier(item.medicine, item.sellUnit);
-        const soldPieces = item.quantity * multiplier;
-        await auditService.logAction({
-          userId: currentUser?.uid || 'unknown',
-          userName: currentUser?.name || 'Unknown User',
-          userRole: currentUser?.role || 'unknown',
-          action: 'MEDICINE_SOLD',
-          entityType: 'sale',
-          entityId: item.medicine.id,
-          entityName: item.medicine.name,
-          details: {
-            quantity: item.quantity,
-            unitSold: item.sellUnit,
-            price: item.medicine.price,
-            totalPrice: (item.medicine.price || 0) * item.quantity * multiplier,
-            customerName: customerName || 'Walk-in',
-          },
-        });
- 
-        let remaining = soldPieces;
-        let updatedBatches = Array.isArray(item.medicine.batches) ? item.medicine.batches.map(b => ({ ...b })) : [];
-        if (updatedBatches.length > 0) {
-          updatedBatches.sort((a, b) => {
-            const ta = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
-            const tb = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
-            return ta - tb;
-          });
-          for (let i = 0; i < updatedBatches.length && remaining > 0; i++) {
-            const qty = Number(updatedBatches[i].quantityPieces || 0);
-            const consume = Math.min(qty, remaining);
-            updatedBatches[i].quantityPieces = qty - consume;
-            remaining -= consume;
-          }
-        }
-        const newQty = updatedBatches.length > 0
-          ? updatedBatches.reduce((sum, b) => sum + Number(b.quantityPieces || 0), 0)
-          : Math.max(0, (item.medicine.quantity || 0) - soldPieces);
-        const earliestBatch = updatedBatches
-          .filter(b => !!b.expiryDate)
-          .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0];
-        const updatedData = {
-          ...item.medicine,
-          quantity: newQty,
-          expiryDate: earliestBatch?.expiryDate || item.medicine.expiryDate || '',
-          batches: updatedBatches.length > 0 ? updatedBatches : item.medicine.batches
-        };
-        onUpdateMedicine?.(item.medicine.id, updatedData);
+      // Process stock reduction using FEFO
+      const saleItems = cart.map(item => ({
+        medicineId: item.medicine.id,
+        quantity: item.quantity * getUnitMultiplier(item.medicine, item.sellUnit)
+      }));
+
+      try {
+        await medicineService.processSale(saleItems);
+      } catch (err) {
+        try {
+          window.dispatchEvent(new CustomEvent('local-sale', { detail: { items: saleItems } }));
+        } catch {}
       }
- 
+
       const svc = await loadReceiptService();
       if (svc) {
         const payload = {
@@ -198,10 +169,14 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           subtotal: total,
           tax: 0,
           grandTotal: total,
+          amountReceived: Number(amountReceived),
+          change: Number(amountReceived) - total,
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
         };
         const receiptId = await svc.addReceipt(payload);
+        
+        // Log general sale completion
         await auditService.logAction({
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
@@ -214,24 +189,28 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             itemsCount: cart.length,
             subtotal: total,
             grandTotal: total,
+            amountReceived: Number(amountReceived),
+            change: Number(amountReceived) - total,
             customerName: customerName || 'Walk-in',
           },
         });
+
         const data = await svc.getRecentReceipts(100);
         setReceipts(data);
         const createdReceipt = { id: receiptId, ...payload };
-        alert(`Sale completed!\nCustomer: ${customerName || 'Walk-in'}\nTotal: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}`);
+        try { await medicineService.getMedicines(); } catch {}
+        try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
+        setSaleSuccess(createdReceipt);
         setCart([]);
         setCustomerName('');
+        setAmountReceived('');
         return createdReceipt;
       }
     } catch (error) {
       console.error('[Receipts] Checkout error:', error);
+      alert(`Error processing sale: ${error.message}`);
     }
- 
-    alert(`Sale completed!\nCustomer: ${customerName || 'Walk-in'}\nTotal: ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}`);
-    setCart([]);
-    setCustomerName('');
+
     return null;
   };
  
@@ -281,6 +260,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
       .join('');
     const subtotal = Number(r.subtotal || 0);
     const grand = Number(r.grandTotal || subtotal);
+    const received = Number(r.amountReceived || 0);
+    const change = Number(r.change || 0);
     const rid = r.id || '';
     return `<!doctype html>
 <html>
@@ -315,6 +296,10 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   <table class="totals">
     <tr><td class="label">Subtotal</td><td class="value">${formatMoney(subtotal)}</td></tr>
     <tr><td class="label">Total</td><td class="value">${formatMoney(grand)}</td></tr>
+    ${received > 0 ? `
+    <tr><td class="label">Cash Received</td><td class="value">${formatMoney(received)}</td></tr>
+    <tr><td class="label">Change</td><td class="value">${formatMoney(change)}</td></tr>
+    ` : ''}
   </table>
   <div class="footer">Cashier: ${r.userName || 'Unknown'} • Customer: ${r.customerName || 'Walk-in'}</div>
 </body>
@@ -371,6 +356,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     y += 18;
     const subtotal = Number(r.subtotal || 0);
     const grand = Number(r.grandTotal || subtotal);
+    const received = Number(r.amountReceived || 0);
+    const change = Number(r.change || 0);
     doc.setFontSize(12);
     doc.text('Subtotal', 400, y);
     doc.text(formatMoney(subtotal), 540, y, { align: 'right' });
@@ -378,6 +365,16 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     doc.setFontSize(12);
     doc.text('Total', 400, y);
     doc.text(formatMoney(grand), 540, y, { align: 'right' });
+    
+    if (received > 0) {
+      y += 18;
+      doc.text('Cash Received', 400, y);
+      doc.text(formatMoney(received), 540, y, { align: 'right' });
+      y += 18;
+      doc.text('Change', 400, y);
+      doc.text(formatMoney(change), 540, y, { align: 'right' });
+    }
+    
     y += 24;
     doc.setFontSize(10);
     doc.text(`Cashier: ${r.userName || 'Unknown'}`, 40, y);
@@ -417,7 +414,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Receipts</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Sales</h1>
         <p className="text-gray-600">Process sales and manage transactions</p>
       </div>
  
@@ -442,13 +439,16 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                 key={medicine.id}
                 onClick={() => addToCart(medicine)}
                 className="bg-card rounded-lg border p-4 hover:border-blue-500 hover:shadow-md transition-all text-left"
-                disabled={(medicine.quantity || 0) === 0}
+                disabled={(medicine.totalQuantity || 0) === 0}
               >
                 <h3 className="font-semibold text-sm mb-1 truncate">{medicine.name || 'Unknown'}</h3>
+                {medicine.strength && (
+                  <p className="text-[10px] text-gray-400 -mt-1">{medicine.strength} • {medicine.dosageForm}</p>
+                )}
                 <p className="text-xs text-gray-500 mb-2">{medicine.category || 'N/A'}</p>
                 <div className="flex justify-between items-center">
                   <span className="text-blue-600 font-semibold">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(medicine.price || 0)}</span>
-                  <span className="text-xs text-gray-500">{medicine.quantity || 0} in stock</span>
+                  <span className="text-xs text-gray-500">{medicine.totalQuantity || 0} in stock</span>
                 </div>
               </button>
             ))}
@@ -478,7 +478,10 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                   <div key={`${item.medicine.id}-${item.sellUnit}`} className="border-b pb-3">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
-                        <p className="font-medium text-sm">{item.medicine.name || 'Unknown'}</p>
+                        <p className="font-medium text-sm">
+                          {item.medicine.name || 'Unknown'} 
+                          <span className="text-[10px] text-gray-400 ml-1">({item.medicine.strength})</span>
+                        </p>
                         <div className="flex items-center gap-2">
                           <select
                             value={item.sellUnit}
@@ -498,10 +501,10 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                             className="text-xs border rounded px-2 py-1"
                           >
                             <option value="piece">{item.medicine.unit === 'capsules' ? 'Capsule' : item.medicine.unit === 'tablets' ? 'Tablet' : 'Unit'}</option>
-                            {Number(item.medicine.tabletCount || 0) > 0 && (
+                            {!isBottle(item.medicine) && getTabletCount(item.medicine) > 0 && (
                               <option value="blister">Blister/Strip</option>
                             )}
-                            {Number(item.medicine.tabletCount || 0) > 0 && Number(item.medicine.blisterCount || 0) > 0 && (
+                            {!isBottle(item.medicine) && getBoxTabletCount(item.medicine) > 0 && (
                               <option value="box">Box</option>
                             )}
                           </select>
@@ -798,41 +801,140 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
               <div className="space-y-1">
                 {cart.map((ci, idx) => (
                   <div key={ci.medicine.id + '-' + ci.sellUnit + '-' + idx} className="flex justify-between text-sm">
-                    <span>{ci.medicine.name} x{ci.quantity} {ci.sellUnit}</span>
+                    <span>{ci.medicine.name} ({ci.medicine.strength}) x{ci.quantity} {ci.sellUnit}</span>
                     <span>{formatMoney((ci.unitPrice || (ci.medicine.price || 0)) * ci.quantity)}</span>
                   </div>
                 ))}
               </div>
-              <div className="border-t pt-2">
+              <div className="border-t pt-2 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
                   <span>{formatMoney(total)}</span>
                 </div>
-                <div className="flex justify-between text-sm font-semibold">
+                <div className="flex justify-between text-lg font-bold border-t pt-2 text-blue-600">
                   <span>Total</span>
                   <span>{formatMoney(grandTotal)}</span>
                 </div>
+                
+                <div className="pt-4 space-y-2 border-t">
+                  <label htmlFor="cashReceived" className="block text-sm font-medium text-gray-700">
+                    Cash Received (₱)
+                  </label>
+                  <input
+                    type="number"
+                    id="cashReceived"
+                    value={amountReceived}
+                    onChange={(e) => setAmountReceived(e.target.value)}
+                    placeholder="Enter amount received"
+                    className="w-full px-4 py-2 border-2 border-blue-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg font-semibold"
+                    autoFocus
+                  />
+                  {amountReceived && Number(amountReceived) >= grandTotal && (
+                    <div className="flex justify-between items-center p-3 bg-green-50 rounded-md border border-green-200 mt-2">
+                      <span className="text-sm font-medium text-green-700">Change:</span>
+                      <span className="text-xl font-bold text-green-700">
+                        {formatMoney(Number(amountReceived) - grandTotal)}
+                      </span>
+                    </div>
+                  )}
+                  {amountReceived && Number(amountReceived) < grandTotal && (
+                    <p className="text-sm text-red-500 font-medium">Insufficient amount</p>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col gap-2 pt-4">
+                <div className="flex gap-2">
+                  <button
+                    onClick={handlePrintAndComplete}
+                    disabled={!amountReceived || Number(amountReceived) < grandTotal}
+                    className="flex-1 px-3 py-3 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Print & Complete Sale
+                  </button>
+                  <button
+                    onClick={handleCompleteSaleOnly}
+                    disabled={!amountReceived || Number(amountReceived) < grandTotal}
+                    className="flex-1 px-3 py-3 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Complete Sale
+                  </button>
+                </div>
                 <button
-                  onClick={handlePrintAndComplete}
-                  className="px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-medium"
-                >
-                  Print & Complete Sale
-                </button>
-                <button
-                  onClick={handleCompleteSaleOnly}
-                  className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 font-medium"
-                >
-                  Complete Sale
-                </button>
-                <button
-                  onClick={() => setCheckoutModalOpen(false)}
-                  className="px-3 py-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-medium"
+                  onClick={() => {
+                    setCheckoutModalOpen(false);
+                    setAmountReceived('');
+                  }}
+                  className="w-full px-3 py-2 rounded-md bg-gray-200 text-gray-800 hover:bg-gray-300 font-medium transition-colors"
                 >
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {saleSuccess && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full overflow-hidden">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold">Sale Completed</h3>
+              <p className="text-sm text-gray-600">Customer: {saleSuccess.customerName || 'Walk-in'}</p>
+            </div>
+            <div className="p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Total</span>
+                <span className="font-semibold">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.grandTotal || saleSuccess.subtotal || 0))}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Cash</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.amountReceived || 0))}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Change</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.change || 0))}</span>
+              </div>
+              <div className="mt-3">
+                <div className="text-xs text-gray-500 mb-1">Items</div>
+                <div className="max-h-40 overflow-y-auto border rounded">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Name</th>
+                        <th className="px-2 py-1 text-right">Qty</th>
+                        <th className="px-2 py-1 text-right">Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(saleSuccess.items || []).map((it, idx) => (
+                        <tr key={idx} className="border-t">
+                          <td className="px-2 py-1">{it.name}</td>
+                          <td className="px-2 py-1 text-right">{Number(it.quantity || 0)}</td>
+                          <td className="px-2 py-1 text-right">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(it.price || 0))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  try {
+                    const html = buildReceiptHtml(saleSuccess);
+                    printHtml(html);
+                  } catch {}
+                }}
+                className="px-4 py-2 border rounded-md text-sm hover:bg-gray-50"
+              >
+                Print Receipt
+              </button>
+              <button
+                onClick={() => setSaleSuccess(null)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

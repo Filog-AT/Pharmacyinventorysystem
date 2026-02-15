@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { Dashboard } from '@/app/components/Dashboard';
 import { StaffDashboard } from '@/app/components/StaffDashboard';
 import { Inventory } from './components/Inventory';
+import { Analytics } from './components/Analytics';
 import { Customers } from './components/Customers';
 import { Reports } from './components/Reports';
 import { Notifications } from './components/Notifications';
@@ -12,6 +13,7 @@ import { Settings } from './components/Settings';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { OrdersSuppliers } from './components/OrdersSuppliers';
 import { AuditLog } from './components/AuditLog';
+import { SalesPOS } from './components/SalesPOS';
 import { Receipts } from './components/Receipts';
 import { auditService } from '@/services/auditService';
 import { Toaster } from '@/app/components/ui/sonner';
@@ -44,67 +46,73 @@ const initialMedicines = [
     id: '1',
     name: 'Amoxicillin',
     category: 'Antibiotic',
-    quantity: 150,
+    dosageForm: 'tablet',
+    strength: '500mg',
+    totalQuantity: 150,
     unit: 'tablets',
     minStockLevel: 50,
-    expiryDate: '2026-08-15',
-    supplier: 'PharmaCorp',
-    price: 12.99
+    price: 12.99,
+    batches: []
   },
   {
     id: '2',
     name: 'Ibuprofen',
     category: 'Painkiller',
-    quantity: 25,
+    dosageForm: 'tablet',
+    strength: '400mg',
+    totalQuantity: 25,
     unit: 'bottles',
-    minStockLevel: 30,
-    expiryDate: '2025-12-20',
-    supplier: 'MediSupply Inc',
-    price: 8.50
+    minStockLevel: 50,
+    price: 8.50,
+    batches: []
   },
   {
     id: '3',
     name: 'Lisinopril',
     category: 'Cardiovascular',
-    quantity: 200,
+    dosageForm: 'tablet',
+    strength: '10mg',
+    totalQuantity: 200,
     unit: 'tablets',
-    minStockLevel: 100,
-    expiryDate: '2026-03-10',
-    supplier: 'HeartMed Solutions',
-    price: 15.75
+    minStockLevel: 50,
+    price: 15.75,
+    batches: []
   },
   {
     id: '4',
     name: 'Metformin',
     category: 'Diabetes',
-    quantity: 5,
+    dosageForm: 'tablet',
+    strength: '500mg',
+    totalQuantity: 5,
     unit: 'boxes',
-    minStockLevel: 20,
-    expiryDate: '2026-01-25',
-    supplier: 'DiabetesCare Ltd',
-    price: 22.00
+    minStockLevel: 50,
+    price: 22.00,
+    batches: []
   },
   {
     id: '5',
     name: 'Cetirizine',
     category: 'Antihistamine',
-    quantity: 80,
+    dosageForm: 'tablet',
+    strength: '10mg',
+    totalQuantity: 80,
     unit: 'tablets',
-    minStockLevel: 40,
-    expiryDate: '2025-11-30',
-    supplier: 'AllergyRelief Co',
-    price: 9.25
+    minStockLevel: 50,
+    price: 9.25,
+    batches: []
   },
   {
     id: '6',
     name: 'Omeprazole',
     category: 'Gastrointestinal',
-    quantity: 120,
+    dosageForm: 'capsule',
+    strength: '20mg',
+    totalQuantity: 120,
     unit: 'capsules',
-    minStockLevel: 60,
-    expiryDate: '2026-06-18',
-    supplier: 'GastroHealth',
-    price: 18.50
+    minStockLevel: 50,
+    price: 18.50,
+    batches: []
   }
 ];
 
@@ -193,6 +201,91 @@ function AppSimple() {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const services = await loadFirebaseAsync();
+        if (services?.medicineService) {
+          const updated = await services.medicineService.getMedicines();
+          setMedicines(updated);
+        }
+      } catch (e) {
+        console.warn('[AppSimple] refresh-medicines failed:', e);
+      }
+    };
+    window.addEventListener('refresh-medicines', handler as any);
+    return () => window.removeEventListener('refresh-medicines', handler as any);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        const items: Array<{ medicineId: string; quantity: number }> = e?.detail?.items || [];
+        if (!Array.isArray(items) || items.length === 0) return;
+        setMedicines(prev => {
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const next = prev.map(m => ({ ...m, batches: Array.isArray(m.batches) ? m.batches.map(b => ({ ...b })) : [] }));
+          for (const item of items) {
+            const idx = next.findIndex(m => m.id === item.medicineId);
+            if (idx < 0) continue;
+            let remaining = Number(item.quantity || 0);
+            const med = next[idx];
+            const batches = Array.isArray(med.batches) ? med.batches : [];
+            const order = batches
+              .map((b, i) => ({ b, i }))
+              .filter(x => {
+                const exp = new Date(x.b.expiryDate);
+                exp.setHours(0,0,0,0);
+                return exp >= today && Number(x.b.quantity || 0) > 0;
+              })
+              .sort((a, b) => new Date(a.b.expiryDate).getTime() - new Date(b.b.expiryDate).getTime())
+              .map(x => x.i);
+            for (const bi of order) {
+              if (remaining <= 0) break;
+              const b = batches[bi];
+              const q = Number(b.quantity || 0);
+              if (q >= remaining) {
+                b.quantity = q - remaining;
+                remaining = 0;
+              } else {
+                remaining -= q;
+                b.quantity = 0;
+              }
+            }
+            if (remaining > 0) {
+              // Fallback: consume from any non-expired batch
+              for (let i = 0; i < batches.length && remaining > 0; i++) {
+                const b = batches[i];
+                const exp = new Date(b.expiryDate); exp.setHours(0,0,0,0);
+                if (exp < today) continue;
+                const q = Number(b.quantity || 0);
+                if (q >= remaining) {
+                  b.quantity = q - remaining;
+                  remaining = 0;
+                } else {
+                  remaining -= q;
+                  b.quantity = 0;
+                }
+              }
+            }
+            const totalQty = batches.reduce((sum, b) => {
+              const exp = new Date(b.expiryDate); exp.setHours(0,0,0,0);
+              return exp < today ? sum : sum + Number(b.quantity || 0);
+            }, 0);
+            med.batches = batches;
+            med.totalQuantity = totalQty;
+          }
+          return next;
+        });
+      } catch (e) {
+        console.warn('[AppSimple] local-sale failed:', e);
+      }
+    };
+    window.addEventListener('local-sale', handler as any);
+    return () => window.removeEventListener('local-sale', handler as any);
+  }, []);
+
   // Load Firebase data in background (after UI renders)
   useEffect(() => {
     const syncFirebaseData = async () => {
@@ -206,17 +299,19 @@ function AppSimple() {
 
         console.log('[AppSimple] Syncing with Firebase...');
         const firebaseMedicines = await services.medicineService.getMedicines();
+        console.log('[AppSimple] Firestore medicines received:', firebaseMedicines);
         
-        if (firebaseMedicines && firebaseMedicines.length > 0) {
-          console.log('[AppSimple] Updated from Firebase:', firebaseMedicines.length, 'medicines');
-          
-          // Deduplicate based on ID just in case
-          const uniqueMedicines = Array.from(
-            new Map(firebaseMedicines.map(m => [m.id, m])).values()
-          );
-          
-          setMedicines(uniqueMedicines);
-        } else {
+        // Always update from Firebase if successful, even if empty
+        console.log('[AppSimple] Updated from Firebase:', (firebaseMedicines || []).length, 'medicines');
+        
+        // Deduplicate based on ID just in case
+        const uniqueMedicines = Array.from(
+          new Map((firebaseMedicines || []).map(m => [m.id, m])).values()
+        );
+        
+        setMedicines(uniqueMedicines);
+
+        if (!firebaseMedicines || firebaseMedicines.length === 0) {
           console.log('[AppSimple] Populating Firebase with sample data...');
           for (const medicine of initialMedicines) {
             try {
@@ -225,6 +320,9 @@ function AppSimple() {
               console.warn('[AppSimple] Could not add medicine to Firebase:', e);
             }
           }
+          // Refresh after adding initial data
+          const refreshed = await services.medicineService.getMedicines();
+          setMedicines(refreshed);
         }
         setFirebaseReady(true);
       } catch (error) {
@@ -247,7 +345,7 @@ function AppSimple() {
       role: user.role
     };
     setCurrentUser(appUser);
-    setActivePage(appUser?.role === 'manager' ? 'dashboard' : 'inventory');
+    setActivePage('dashboard');
     try {
       sessionStorage.removeItem(`pharmacy_low_toasts_shown_${appUser.uid}`);
     } catch {}
@@ -325,120 +423,112 @@ function AppSimple() {
   const handleAddMedicine = async (medicineData: any) => {
     const baseId = Date.now().toString();
     const normName = (medicineData.name || '').trim().toLowerCase();
-    const makeBatch = (payload: any) => {
-      const subUnit = payload.subUnitType || payload.unit;
-      const batch = {
-        batchId: `${baseId}-${Math.random().toString(36).slice(2, 8)}`,
+    const normForm = (medicineData.dosageForm || '').trim().toLowerCase();
+    const normStrength = String(medicineData.strength || '').replace(/\s+/g, '').toLowerCase();
+
+    const existing = medicines.find(m =>
+      (m.name || '').trim().toLowerCase() === normName &&
+      (m.dosageForm || '').trim().toLowerCase() === normForm &&
+      String(m.strength || '').replace(/\s+/g, '').toLowerCase() === normStrength
+    );
+
+    const buildBatchPayload = (payload: any) => {
+      const unit = payload.unit || 'units';
+      const isBoxes = unit === 'boxes';
+      const qty = Number(payload.quantity || 0);
+      const blisters = Number(payload.blisterCount || 1);
+      const perBlister = Number(payload.tabletCount || 1);
+      // Normalize to boxes/blisters/units triple
+      const boxesReceived = isBoxes ? qty : 1;
+      const blistersPerBox = isBoxes ? blisters : 1;
+      const unitsPerBlister = isBoxes ? perBlister : qty;
+      return {
+        batchNumber: `BN-${baseId.slice(-6)}`,
         expiryDate: payload.expiryDate || '',
-        unit: subUnit || 'units',
-        blisterCount: Number(payload.blisterCount || 0),
-        tabletCount: Number(payload.tabletCount || 0),
-        quantityPieces: Number(payload.quantity || 0),
-        sourceUnit: payload.unit || subUnit || 'units',
-        createdAt: new Date().toISOString()
+        supplier: payload.supplier || '',
+        boxesReceived,
+        blistersPerBox,
+        unitsPerBlister,
       };
-      return batch;
     };
-    const existing = medicines.find(m => (m.name || '').trim().toLowerCase() === normName);
+
     if (existing) {
-      const prevBatches = Array.isArray(existing.batches) ? existing.batches.slice() : [];
-      if (prevBatches.length === 0) {
-        const initialBatch = {
-          batchId: `${existing.id}-initial`,
-          expiryDate: existing.expiryDate || '',
-          unit: existing.unit || 'units',
-          blisterCount: Number(existing.blisterCount || 0),
-          tabletCount: Number(existing.tabletCount || 0),
-          quantityPieces: Number(existing.quantity || 0),
-          sourceUnit: existing.unit || 'units',
-          createdAt: new Date().toISOString()
-        };
-        prevBatches.push(initialBatch);
+      const batchData = buildBatchPayload(medicineData);
+      await handleAddBatch(existing.id, batchData);
+      return;
+    }
+
+    // Create new medicine with initial batch aligned to batch schema
+    const batchData = buildBatchPayload(medicineData);
+    const totalUnits = Number(batchData.boxesReceived || 0) * Number(batchData.blistersPerBox || 1) * Number(batchData.unitsPerBlister || 1);
+    const initialBatch = {
+      ...batchData,
+      id: `bn-${baseId}`,
+      quantity: totalUnits,
+      initialQuantity: totalUnits,
+      createdAt: new Date().toISOString(),
+    };
+
+    const newMedicine = {
+      ...medicineData,
+      id: baseId,
+      name: (medicineData.name || '').trim(),
+      totalQuantity: totalUnits,
+      unit: medicineData.subUnitType || medicineData.unit || 'units',
+      batches: [initialBatch]
+    };
+    setMedicines(prev => [...prev, newMedicine]);
+    (async () => {
+      try {
+        await auditService.logAction({
+          userId: currentUser?.uid || 'unknown',
+          userName: currentUser?.name || 'Unknown User',
+          userRole: currentUser?.role || 'unknown',
+          action: 'MEDICINE_ADD',
+          entityType: 'medicine',
+          entityId: newMedicine.id,
+          entityName: newMedicine.name,
+          details: newMedicine,
+        });
+      } catch (e) {}
+    })();
+    if (firebaseReady) {
+      try {
+        const services = await loadFirebaseAsync();
+        if (services?.medicineService) {
+          const { id, ...dataWithoutId } = newMedicine;
+          const firebaseId = await services.medicineService.addMedicine(dataWithoutId);
+          setMedicines(prev => prev.map(m => m.id === newMedicine.id ? { ...m, id: firebaseId } : m));
+        }
+      } catch {}
+    }
+  };
+
+  const handleAddBatch = async (medicineId: string, batchData: any) => {
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        await services.medicineService.addBatch(medicineId, batchData);
+        // Refresh medicines
+        const updatedMedicines = await services.medicineService.getMedicines();
+        setMedicines(updatedMedicines);
       }
-      const newBatch = makeBatch(medicineData);
-      const sameIdx = prevBatches.findIndex(b =>
-        (b.expiryDate || '') === (newBatch.expiryDate || '') &&
-        (b.unit || '') === (newBatch.unit || '') &&
-        Number(b.blisterCount || 0) === Number(newBatch.blisterCount || 0) &&
-        Number(b.tabletCount || 0) === Number(newBatch.tabletCount || 0)
-      );
-      if (sameIdx >= 0) {
-        prevBatches[sameIdx] = {
-          ...prevBatches[sameIdx],
-          quantityPieces: Number(prevBatches[sameIdx].quantityPieces || 0) + Number(newBatch.quantityPieces || 0)
-        };
-      } else {
-        prevBatches.push(newBatch);
+    } catch (error) {
+      console.error('[AppSimple] Failed to add batch:', error);
+    }
+  };
+
+  const handleUpdateBatch = async (medicineId: string, batchId: string, batchData: any) => {
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        await services.medicineService.updateBatch(medicineId, batchId, batchData);
+        // Refresh medicines
+        const updatedMedicines = await services.medicineService.getMedicines();
+        setMedicines(updatedMedicines);
       }
-      const totalQty = prevBatches.reduce((sum, b) => sum + Number(b.quantityPieces || 0), 0);
-      const earliestBatch = prevBatches
-        .filter(b => !!b.expiryDate)
-        .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0];
-      const updated = {
-        ...existing,
-        quantity: totalQty,
-        expiryDate: earliestBatch?.expiryDate || existing.expiryDate || '',
-        unit: existing.unit || newBatch.unit || 'units',
-        batches: prevBatches
-      };
-      setMedicines(prev => prev.map(m => m.id === existing.id ? updated : m));
-      (async () => {
-        try {
-          await auditService.logAction({
-            userId: currentUser?.uid || 'unknown',
-            userName: currentUser?.name || 'Unknown User',
-            userRole: currentUser?.role || 'unknown',
-            action: 'MEDICINE_BATCH_ADD',
-            entityType: 'medicine',
-            entityId: existing.id,
-            entityName: existing.name,
-            details: { addedBatch: newBatch, totalQuantity: totalQty }
-          });
-        } catch (e) {}
-      })();
-      if (firebaseReady) {
-        try {
-          const services = await loadFirebaseAsync();
-          if (services?.medicineService) {
-            await services.medicineService.updateMedicine(existing.id, { quantity: totalQty, expiryDate: updated.expiryDate, unit: updated.unit, batches: prevBatches });
-          }
-        } catch {}
-      }
-    } else {
-      const batch = makeBatch(medicineData);
-      const newMedicine = {
-        ...medicineData,
-        id: baseId,
-        name: (medicineData.name || '').trim(),
-        quantity: Number(medicineData.quantity || 0),
-        unit: medicineData.subUnitType || medicineData.unit || 'units',
-        batches: [batch]
-      };
-      setMedicines(prev => [...prev, newMedicine]);
-      (async () => {
-        try {
-          await auditService.logAction({
-            userId: currentUser?.uid || 'unknown',
-            userName: currentUser?.name || 'Unknown User',
-            userRole: currentUser?.role || 'unknown',
-            action: 'MEDICINE_ADD',
-            entityType: 'medicine',
-            entityId: newMedicine.id,
-            entityName: newMedicine.name,
-            details: newMedicine,
-          });
-        } catch (e) {}
-      })();
-      if (firebaseReady) {
-        try {
-          const services = await loadFirebaseAsync();
-          if (services?.medicineService) {
-            const { id, ...dataWithoutId } = newMedicine;
-            const firebaseId = await services.medicineService.addMedicine(dataWithoutId);
-            setMedicines(prev => prev.map(m => m.id === newMedicine.id ? { ...m, id: firebaseId } : m));
-          }
-        } catch {}
-      }
+    } catch (error) {
+      console.error('[AppSimple] Failed to update batch:', error);
     }
   };
 
@@ -607,6 +697,9 @@ function AppSimple() {
             onAddMedicine={handleAddMedicine}
             onUpdateMedicine={handleUpdateMedicine}
             onDeleteMedicine={handleDeleteMedicine}
+            onAddBatch={handleAddBatch}
+            onUpdateBatch={handleUpdateBatch}
+            onDeleteBatch={handleDeleteMedicine}
             currentUser={currentUser}
           />
         );
@@ -624,8 +717,14 @@ function AppSimple() {
             settings={settings}
             onUpdateSettings={setSettings}
             currentUser={currentUser}
+            medicines={medicines}
           />
         );
+      case 'analytics':
+        if (currentUser?.role !== 'manager') {
+          return <div className="p-6">Unauthorized</div>;
+        }
+        return <Analytics medicines={medicines} categories={categories} />;
       case 'orders':
         return <OrdersSuppliers />;
       case 'activity':
@@ -634,7 +733,7 @@ function AppSimple() {
         if (currentUser?.role !== 'staff') {
           return <div className="p-6">Unauthorized</div>;
         }
-        return <Receipts medicines={medicines} currentUser={currentUser} onUpdateMedicine={handleUpdateMedicine} />;
+        return <Receipts medicines={medicines} currentUser={currentUser} />;
       default:
         if (currentUser?.role === 'staff') {
           return <StaffDashboard medicines={medicines} />;

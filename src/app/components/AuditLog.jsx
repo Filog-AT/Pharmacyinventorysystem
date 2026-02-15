@@ -6,7 +6,6 @@ const actionColors = {
   MEDICINE_ADD: { bg: 'bg-green-100', text: 'text-green-700', label: 'Medicine Added' },
   MEDICINE_EDIT: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Medicine Edited' },
   MEDICINE_DELETE: { bg: 'bg-red-100', text: 'text-red-700', label: 'Medicine Deleted' },
-  MEDICINE_SOLD: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Medicine Sold' },
   USER_ADD: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'User Added' },
   USER_EDIT: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'User Edited' },
   USER_DELETE: { bg: 'bg-red-100', text: 'text-red-700', label: 'User Deleted' },
@@ -74,10 +73,13 @@ export function AuditLog() {
   };
 
   const filterLogs = () => {
-    let filtered = [...logs];
+    // Exclude MEDICINE_SOLD and SALE_COMPLETED actions
+    let filtered = logs.filter(
+      (log) => log.action !== 'MEDICINE_SOLD' && log.action !== 'SALE_COMPLETED'
+    );
 
     if (filters.action) {
-      filtered = filtered.filter(log => log.action === filters.action);
+      filtered = filtered.filter((log) => log.action === filters.action);
     }
 
     if (filters.userId) {
@@ -177,14 +179,10 @@ export function AuditLog() {
 
       {/* Top Stats */}
       {filteredLogs.length > 0 && (
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-card rounded-lg border p-4">
             <p className="text-sm text-muted-foreground mb-1">Total Activities</p>
             <p className="text-2xl font-bold text-card-foreground">{filteredLogs.length}</p>
-          </div>
-          <div className="bg-card rounded-lg border p-4">
-            <p className="text-sm text-muted-foreground mb-1">Medicines Sold</p>
-            <p className="text-2xl font-bold text-card-foreground">{filteredLogs.filter(l => l.action === 'MEDICINE_SOLD').length}</p>
           </div>
           <div className="bg-card rounded-lg border p-4">
             <p className="text-sm text-muted-foreground mb-1">Changes Made</p>

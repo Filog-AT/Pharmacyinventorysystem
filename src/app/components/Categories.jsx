@@ -29,11 +29,12 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
       }
       
       const cat = stats.get(category);
-      cat.count += (med.quantity || 0);
-      cat.totalValue += (med.quantity || 0) * (med.price || 0);
+      const qty = Number(med.totalQuantity || 0);
+      cat.count += qty;
+      cat.totalValue += qty * (med.price || 0);
       cat.items.push(med);
       
-      if ((med.quantity || 0) <= (med.minStockLevel || 0)) {
+      if (qty <= (med.minStockLevel || 0)) {
         cat.lowStock += 1;
       }
     });
@@ -54,7 +55,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
     }
   };
 
-  // View products in a category
+  // View medicines in a category
   if (selectedCategory) {
     const categoryData = categoryStats.find(c => c.name === selectedCategory);
     
@@ -86,7 +87,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
         ) : (
           <div className="bg-white rounded-lg shadow-sm p-12 text-center">
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No products in this category</p>
+            <p className="text-gray-500 text-lg">No medicines in this category</p>
             <button 
               onClick={() => setSelectedCategory(null)}
               className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
@@ -105,7 +106,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
       <div className="mb-6 flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Categories</h1>
-          <p className="text-gray-600">Manage product categories and organize inventory</p>
+          <p className="text-gray-600">Manage medicine categories and organize inventory</p>
         </div>
         <button
           onClick={() => setShowAddForm(true)}
@@ -123,7 +124,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
-                <p className="text-sm text-gray-500">{category.itemCount} products</p>
+                <p className="text-sm text-gray-500">{category.itemCount} medicines</p>
               </div>
               <div className="flex gap-2">
                 <button className="p-2 hover:bg-gray-100 rounded-md transition-colors">
@@ -156,7 +157,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
               onClick={() => setSelectedCategory(category.name)}
               className="w-full mt-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition-colors font-medium"
             >
-              View Products
+              View Medicines
             </button>
           </div>
         ))}

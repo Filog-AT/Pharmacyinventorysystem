@@ -1,33 +1,58 @@
+import { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, DollarSign, Package, ShoppingCart } from 'lucide-react';
-
-const salesData = [
-  { month: 'Jul', revenue: 4500, sales: 45 },
-  { month: 'Aug', revenue: 5200, sales: 52 },
-  { month: 'Sep', revenue: 4800, sales: 48 },
-  { month: 'Oct', revenue: 6100, sales: 61 },
-  { month: 'Nov', revenue: 5700, sales: 57 },
-  { month: 'Dec', revenue: 7200, sales: 72 },
-  { month: 'Jan', revenue: 6800, sales: 68 }
-];
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
 export function Reports({ medicines }) {
+  const [receipts, setReceipts] = useState([]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const { receiptService } = await import('@/services/receiptService');
+        const data = await receiptService.getRecentReceipts(1000);
+        setReceipts(data);
+      } catch (e) {
+        console.warn('[Reports] Failed to load receipts:', e);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Process sales data for the trend chart
+  const salesTrendData = useMemo(() => {
+    const groups = {};
+    receipts.forEach(r => {
+      const date = r.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
+      const month = date.toLocaleString('default', { month: 'short' });
+      if (!groups[month]) groups[month] = { month, revenue: 0, sales: 0 };
+      groups[month].revenue += (r.grandTotal || 0);
+      groups[month].sales += 1;
+    });
+    
+    // Last 7 months logic could be added here, but for now just take what we have
+    return Object.values(groups).reverse(); // reverse to get chronological if needed
+  }, [receipts]);
+
   const categoryData = medicines.reduce((acc, med) => {
     const category = med.category || 'Uncategorized';
     const existing = acc.find(item => item.name === category);
     if (existing) {
-      existing.value += (med.quantity || 0);
+      existing.value += (med.totalQuantity || 0);
     } else {
-      acc.push({ name: category, value: (med.quantity || 0) });
+      acc.push({ name: category, value: (med.totalQuantity || 0) });
     }
     return acc;
   }, []);
 
-  const totalRevenue = 68300;
-  const totalSales = 403;
-  const avgOrderValue = totalRevenue / totalSales;
+  // Calculate real metrics from medicines and receipts
+  const totalRevenue = useMemo(() => {
+    return receipts.reduce((sum, r) => sum + (r.grandTotal || 0), 0);
+  }, [receipts]);
+
+  const totalSales = receipts.length;
+  const avgOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
 
   return (
     <div>
@@ -65,11 +90,11 @@ export function Reports({ medicines }) {
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-gray-600">Products</p>
+            <p className="text-sm text-gray-600">Medicines</p>
             <Package className="w-5 h-5 text-orange-600" />
           </div>
           <p className="text-2xl font-bold text-gray-900">{medicines.length}</p>
-          <p className="text-xs text-gray-500 mt-1">Active products</p>
+          <p className="text-xs text-gray-500 mt-1">Active medicines</p>
         </div>
       </div>
 
@@ -77,9 +102,9 @@ export function Reports({ medicines }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Revenue Chart */}
         <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue Trend (Last 7 Months)</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue Trend</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={salesData}>
+            <LineChart data={salesTrendData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -94,7 +119,7 @@ export function Reports({ medicines }) {
         <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Sales Volume</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={salesData}>
+            <BarChart data={salesTrendData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />

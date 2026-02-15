@@ -5,9 +5,10 @@ import { MedicineCard } from '@/app/components/MedicineCard';
 import { MedicineForm } from '@/app/components/MedicineForm';
 import { StatsCard } from '@/app/components/StatsCard';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Tooltip as RTooltip } from 'recharts';
 import { PrescriptiveRecommendations } from '@/app/components/PrescriptiveRecommendations';
 import { SalesByMedicineStats } from '@/app/components/SalesByMedicineStats';
+import { auditService } from '@/services/auditService';
 
 export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUpdateMedicine, onDeleteMedicine, currentUser, onNavigateToTab }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,26 +70,42 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   }, [medicines, searchTerm, filterCategory]);
 
   const stats = useMemo(() => {
-    const totalMedicines = medicines.length;
+    const today = new Date();
+    const uniqueKey = (m) => `${(m.name || '').toLowerCase()}|${(m.dosageForm || '').toLowerCase()}|${(m.strength || '').toLowerCase()}`;
+    const totalMedicines = new Set(medicines.map(uniqueKey)).size;
+    
+    // Total stock is sum of non-expired units across all medicines
+    const totalStock = medicines.reduce((sum, m) => sum + (m.totalQuantity || 0), 0);
+
     const lowStock = medicines.filter(m => {
-      const qty = m.quantity || 0;
-      const threshold = 50;
-      return threshold > 0 && qty <= threshold;
+      const qty = m.totalQuantity || 0;
+      const threshold = m.minStockLevel || 50;
+      return qty > 0 && qty <= threshold;
     }).length;
+
     const expiringSoon = medicines.filter(m => {
-      if (!m.expiryDate) return false;
-      const today = new Date();
-      const expiryDate = new Date(m.expiryDate);
-      const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      return daysUntilExpiry <= 90 && daysUntilExpiry > 0;
+      if (m.batches && m.batches.length > 0) {
+        return m.batches.some(b => {
+          const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+          if (!exp || isNaN(exp.getTime())) return false;
+          const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          return days <= 90 && days > 0;
+        });
+      }
+      return false;
     }).length;
+
     const expired = medicines.filter(m => {
-      if (!m.expiryDate) return false;
-      const today = new Date();
-      const expiryDate = new Date(m.expiryDate);
-      return expiryDate < today;
+      if (m.batches && m.batches.length > 0) {
+        return m.batches.some(b => {
+          const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+          return exp && !isNaN(exp.getTime()) && exp < today;
+        });
+      }
+      return false;
     }).length;
-    const totalValue = medicines.reduce((sum, m) => sum + ((m.quantity || 0) * (m.price || 0)), 0);
+
+    const totalValue = medicines.reduce((sum, m) => sum + ((m.totalQuantity || 0) * (m.price || 0)), 0);
 
     return { totalMedicines, lowStock, expiringSoon, expired, totalValue };
   }, [medicines]);
@@ -98,35 +115,41 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
     medicines.forEach(m => {
       const key = m.category || 'Uncategorized';
       const prev = map.get(key) || 0;
-      map.set(key, prev + (m.quantity || 0));
+      map.set(key, prev + (m.totalQuantity || 0));
     });
-    return Array.from(map.entries()).map(([name, qty]) => ({ name, quantity: qty }));
+    return Array.from(map.entries()).map(([name, quantity]) => ({ name, quantity }));
   }, [medicines]);
  
   const statusDistribution = useMemo(() => {
-    let normal = 0, low = 0, soon = 0, expired = 0;
+    let healthy = 0, low = 0, outOfStock = 0, expired = 0;
+    const today = new Date();
+
     medicines.forEach(m => {
-      const qty = m.quantity || 0;
-      const lowThreshold = 50;
-      const hasExpiry = !!m.expiryDate;
-      const today = new Date();
-      const exp = hasExpiry ? new Date(m.expiryDate) : null;
-      const days = exp ? Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
-      if (exp && exp < today) {
+      const qty = m.totalQuantity || 0;
+      const minStock = m.minStockLevel || 50;
+
+      // Check for any expired batches in this medicine
+      const hasExpiredBatch = m.batches?.some(b => {
+        const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+        return exp && !isNaN(exp.getTime()) && exp < today;
+      });
+
+      if (hasExpiredBatch) {
         expired += 1;
-      } else if (days !== null && days <= 90) {
-        soon += 1;
-      } else if (lowThreshold > 0 && qty <= lowThreshold) {
+      } else if (qty === 0) {
+        outOfStock += 1;
+      } else if (qty <= minStock) {
         low += 1;
       } else {
-        normal += 1;
+        healthy += 1;
       }
     });
+
     return [
-      { name: 'Normal', value: normal, color: '#22c55e' },
+      { name: 'Healthy', value: healthy, color: '#22c55e' },
       { name: 'Low Stock', value: low, color: '#f59e0b' },
-      { name: 'Expiring Soon', value: soon, color: '#eab308' },
-      { name: 'Expired', value: expired, color: '#ef4444' },
+      { name: 'Out of Stock', value: outOfStock, color: '#ef4444' },
+      { name: 'Expired', value: expired, color: '#991b1b' },
     ];
   }, [medicines]);
  
@@ -165,12 +188,190 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  // Medicine-specific forecast with dropdown (last month focus)
+  const [selectedMedicineId, setSelectedMedicineId] = useState('');
+  const [forecastSeries, setForecastSeries] = useState([]);
+  const [forecastData, setForecastData] = useState({
+    dailyUsage: 0,
+    predicted30: 0,
+    daysRemaining: null,
+    stockoutDate: null,
+    reorderPoint: 0,
+    reorderAlert: false,
+  });
+  // New: recent audit logs
+  const [recentLogs, setRecentLogs] = useState([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const logs = await auditService.getLogs({ limit: 20 });
+        setRecentLogs(Array.isArray(logs) ? logs : []);
+      } catch {
+        setRecentLogs([]);
+      }
+    })();
+  }, []);
+
+  // New: 7-day sales from receipts
+  const last7DaysRevenueStrict = useMemo(() => {
+    const days = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0,10);
+      days.push({ key, label: `${d.getMonth()+1}/${d.getDate()}`, total: 0 });
+    }
+    const map = new Map(days.map(d => [d.key, d]));
+    (receipts || []).forEach(r => {
+      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
+      const key = ts.toISOString().slice(0,10);
+      if (map.has(key)) {
+        const d = map.get(key);
+        d.total += Number(r.grandTotal || r.subtotal || 0);
+      }
+    });
+    return days;
+  }, [receipts]);
+
+  // New: Action lists
+  const lowStockMeds = useMemo(() => {
+    return medicines.filter(m => {
+      const qty = Number(m.totalQuantity || 0);
+      const threshold = Number(m.minStockLevel || 50);
+      return qty > 0 && qty <= threshold;
+    });
+  }, [medicines]);
+  const outOfStockMeds = useMemo(() => {
+    return medicines.filter(m => Number(m.totalQuantity || 0) <= 0);
+  }, [medicines]);
+  const [expSoonDays, setExpSoonDays] = useState(30);
+  const expiringSoonItems = useMemo(() => {
+    const today = new Date();
+    const result = [];
+    medicines.forEach(m => {
+      (m.batches || []).forEach(b => {
+        const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+        if (!exp || isNaN(exp.getTime())) return;
+        const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (days > 0 && days <= expSoonDays) {
+          result.push({ medId: m.id, medName: m.name, batchNumber: b.batchNumber, expiryDate: b.expiryDate });
+        }
+      });
+    });
+    return result.slice(0, 10);
+  }, [medicines, expSoonDays]);
+
+  const stockStatusCounts = useMemo(() => {
+    const today = new Date();
+    let expired = 0, low = 0, expSoon = 0, normal = 0;
+    medicines.forEach(m => {
+      const qty = Number(m.totalQuantity || 0);
+      const min = Number(m.minStockLevel || 50);
+      const hasExpired = Array.isArray(m.batches) && m.batches.some(b => {
+        const d = b.expiryDate ? new Date(b.expiryDate) : null;
+        return d && !isNaN(d.getTime()) && d < today && Number(b.quantity || 0) > 0;
+      });
+      const hasSoon = Array.isArray(m.batches) && m.batches.some(b => {
+        const d = b.expiryDate ? new Date(b.expiryDate) : null;
+        if (!d || isNaN(d.getTime())) return false;
+        const days = Math.ceil((d.getTime() - today.getTime()) / 86400000);
+        return days > 0 && days <= expSoonDays && Number(b.quantity || 0) > 0;
+      });
+      if (hasExpired) {
+        expired += 1;
+      } else if (hasSoon) {
+        expSoon += 1;
+      } else if (qty > 0 && qty <= min) {
+        low += 1;
+      } else if (qty > min) {
+        normal += 1;
+      }
+    });
+    return { expired, low, expSoon, normal };
+  }, [medicines, expSoonDays]);
+
+  // New: navigation helpers to inventory + open modals
+  const openAddStock = (medicineId) => {
+    onNavigateToTab?.('inventory');
+    setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('open-add-stock', { detail: { medicineId } }));
+      } catch {}
+    }, 250);
+  };
+  const openViewBatches = (medicineId) => {
+    onNavigateToTab?.('inventory');
+    setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('open-view-batches', { detail: { medicineId } }));
+      } catch {}
+    }, 300);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const med = medicines.find(m => m.id === selectedMedicineId);
+        if (!med?.id) {
+          setForecastSeries([]);
+          setForecastData({
+            dailyUsage: 0, predicted30: 0, daysRemaining: null, stockoutDate: null, reorderPoint: 0, reorderAlert: false
+          });
+          return;
+        }
+        const now = new Date();
+        const startPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const endPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        // Fetch up to 60 days then filter to previous month
+        const records = await (await import('@/services/medicineService')).medicineService.getSalesLastNDays(med.id, 60);
+        if (!mounted) return;
+        const byDay = new Map();
+        for (let d = new Date(startPrevMonth); d <= endPrevMonth; d.setDate(d.getDate() + 1)) {
+          const k = new Date(d);
+          k.setHours(0,0,0,0);
+          byDay.set(k.toDateString(), 0);
+        }
+        records.forEach(r => {
+          const dt = r?.date_sold && typeof r.date_sold.toDate === 'function' ? r.date_sold.toDate() : new Date(r.date_sold);
+          const k = new Date(dt);
+          k.setHours(0,0,0,0);
+          if (k >= startPrevMonth && k <= endPrevMonth) {
+            const key = k.toDateString();
+            byDay.set(key, (byDay.get(key) || 0) + Number(r.quantity_sold || 0));
+          }
+        });
+        const series = Array.from(byDay.entries()).map(([k, v]) => {
+          const dt = new Date(k);
+          return { label: `${dt.getMonth()+1}/${dt.getDate()}`, units: v };
+        });
+        setForecastSeries(series);
+        const daysInMonth = series.length || (endPrevMonth.getDate());
+        const totalMonth = series.reduce((sum, d) => sum + (Number(d.units) || 0), 0);
+        const dailyUsage = daysInMonth > 0 ? totalMonth / daysInMonth : 0;
+        const predicted30 = dailyUsage * 30;
+        const currentStock = Number(med.totalQuantity || 0);
+        const daysRemaining = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : null;
+        const stockoutDate = daysRemaining != null ? new Date(Date.now() + daysRemaining*24*60*60*1000) : null;
+        const reorderPoint = dailyUsage * 10;
+        const reorderAlert = dailyUsage > 0 ? currentStock <= reorderPoint : false;
+        setForecastData({ dailyUsage, predicted30, daysRemaining, stockoutDate, reorderPoint, reorderAlert });
+      } catch {
+        setForecastSeries([]);
+        setForecastData({ dailyUsage: 0, predicted30: 0, daysRemaining: null, stockoutDate: null, reorderPoint: 0, reorderAlert: false });
+      }
+    };
+    load();
+  }, [selectedMedicineId, medicines]);
+
   const revenueKPIs = useMemo(() => {
     const totalRevenue = (receipts || []).reduce((sum, r) => sum + (r.grandTotal || r.subtotal || 0), 0);
     const totalSales = (receipts || []).length;
     const avgOrderValue = totalSales ? totalRevenue / totalSales : 0;
-    const products = medicines.length;
-    return { totalRevenue, totalSales, avgOrderValue, products };
+    const uniqueKey = (m) => `${(m.name || '').toLowerCase()}|${(m.dosageForm || '').toLowerCase()}|${(m.strength || '').toLowerCase()}`;
+    const uniqueMedicinesCount = new Set(medicines.map(uniqueKey)).size;
+    return { totalRevenue, totalSales, avgOrderValue, uniqueMedicinesCount };
   }, [receipts, medicines]);
 
   const monthlyCounts = useMemo(() => {
@@ -227,8 +428,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       }
       const s = stats.get(cat);
       s.itemCount += 1;
-      s.stock += (m.quantity || 0);
-      s.value += (m.quantity || 0) * (m.price || 0);
+      s.stock += (m.totalQuantity || 0);
+      s.value += (m.totalQuantity || 0) * (m.price || 0);
     });
     
     return Array.from(stats.values()).sort((a, b) => b.value - a.value);
@@ -236,19 +437,41 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
   useEffect(() => {
     const uid = currentUser?.uid || 'unknown';
-    const key = `pharmacy_low_toasts_shown_${uid}`;
-    let shown = false;
-    try {
-      shown = sessionStorage.getItem(key) === 'true';
-    } catch {}
-    if (!shown) {
+    const loadRead = () => {
+      try {
+        const raw = localStorage.getItem('pharmacy_read_notifications');
+        return new Set(raw ? JSON.parse(raw) : []);
+      } catch {
+        return new Set();
+      }
+    };
+    const read = loadRead();
+    const shouldSuppressKey = `pharmacy_toasts_suppressed_${uid}`;
+    let suppressed = false;
+    try { suppressed = localStorage.getItem(shouldSuppressKey) === 'true'; } catch {}
+    if (!suppressed) {
       medicines.forEach(m => {
-        const qty = Number(m.quantity || 0);
-        if (qty <= 50) {
-          toast.warning(`Low stock: ${m.name} (${qty})`, { description: m.category || 'Uncategorized' });
+        const qty = Number(m.totalQuantity || 0);
+        if (qty > 0 && qty <= 50) {
+          const id = `low-${m.id}`;
+          if (read.has(id)) return;
+          toast.warning(`Low stock: ${m.name} (${qty})`, {
+            description: m.category || 'Uncategorized',
+            action: {
+              label: 'Dismiss',
+              onClick: () => {
+                try {
+                  const raw = localStorage.getItem('pharmacy_read_notifications');
+                  const set = new Set(raw ? JSON.parse(raw) : []);
+                  set.add(id);
+                  localStorage.setItem('pharmacy_read_notifications', JSON.stringify(Array.from(set)));
+                } catch {}
+              }
+            }
+          });
         }
       });
-      try { sessionStorage.setItem(key, 'true'); } catch {}
+      try { localStorage.setItem(shouldSuppressKey, 'true'); } catch {}
     }
   }, [medicines, currentUser]);
   const analyticsMedicines = useMemo(() => {
@@ -263,7 +486,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
     return analyticsMedicines
       .map(m => ({
         name: m.name || 'Unknown',
-        quantity: Array.isArray(m.batches) ? m.batches.reduce((s, b) => s + Number(b?.quantityPieces || 0), 0) : Number(m.quantity || 0)
+        quantity: m.totalQuantity || 0
       }))
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 20);
@@ -273,7 +496,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
     const map = new Map();
     analyticsMedicines.forEach(m => {
       const name = m.category || 'Uncategorized';
-      const qty = Array.isArray(m.batches) ? m.batches.reduce((s, b) => s + Number(b?.quantityPieces || 0), 0) : Number(m.quantity || 0);
+      const qty = m.totalQuantity || 0;
       map.set(name, (map.get(name) || 0) + qty);
     });
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
@@ -394,7 +617,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         return catOk && medOk;
       })
       .map(m => {
-        const qty = Array.isArray(m.batches) ? m.batches.reduce((s, b) => s + Number(b?.quantityPieces || 0), 0) : Number(m.quantity || 0);
+        const qty = m.totalQuantity || 0;
         const v = avgPerMed.get(m.id) || 0;
         const daysLeft = v > 0 ? qty / v : Infinity;
         const projectedDate = v > 0 ? new Date(Date.now() + daysLeft * 24 * 60 * 60 * 1000) : null;
@@ -469,9 +692,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         </div>
       </div>
 
-      {/* Advanced Analytics moved below Analytics Overview */}
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+      {/* Clean Top Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatsCard
           title="Total Medicines"
           value={stats.totalMedicines}
@@ -480,75 +702,315 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           onClick={() => onNavigateToTab?.('inventory')}
         />
         <StatsCard
-          title="Low Stock Alerts"
-          value={stats.lowStock}
+          title="Low Stock Items"
+          value={lowStockMeds.length}
           icon={AlertTriangle}
           color="bg-orange-100 text-orange-800 border-orange-200"
           onClick={() => setStatusModal({ open: true, type: 'low' })}
         />
         <StatsCard
-          title="Expiring Soon"
-          value={stats.expiringSoon}
+          title={`Expiring Soon (${expSoonDays}d)`}
+          value={expiringSoonItems.length}
           icon={Calendar}
           color="bg-yellow-100 text-yellow-800 border-yellow-200"
           onClick={() => setStatusModal({ open: true, type: 'soon' })}
         />
         <StatsCard
-          title="Expired Medicines"
-          value={stats.expired}
+          title="Out of Stock"
+          value={outOfStockMeds.length}
           icon={XCircle}
           color="bg-red-100 text-red-800 border-red-200"
-          onClick={() => setStatusModal({ open: true, type: 'expired' })}
+          onClick={() => setStatusModal({ open: true, type: 'out' })}
         />
         <StatsCard
-          title="Inventory Value"
-          value={new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(stats.totalValue)}
+          title="Today’s Sales (₱)"
+          value={new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(salesAggregates.todayTotal)}
           icon={TrendingUp}
           color="bg-green-100 text-green-800 border-green-200"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="space-y-6">
-          <PrescriptiveRecommendations medicines={medicines} />
-        </div>
+      {/* Action Required */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="bg-card rounded-lg border p-4">
-          <h2 className="text-lg font-semibold text-card-foreground mb-4">Stock Status</h2>
-          <ChartContainer
-            config={{ value: { label: 'Count', color: '#3b82f6' } }}
-            className="h-[180px] w-full"
-          >
-            <PieChart>
-              <Pie 
-                data={statusDistribution} 
-                dataKey="value" 
-                nameKey="name" 
-                outerRadius={80} 
-                innerRadius={60}
-                paddingAngle={2}
-              >
-                {statusDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
-                ))}
-              </Pie>
-              <ChartTooltip content={<ChartTooltipContent />} />
-            </PieChart>
-          </ChartContainer>
-          <div className="mt-4 space-y-2 text-sm">
-            {statusDistribution.map(s => (
-              <div key={s.name} className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                  <span className="text-muted-foreground">{s.name}</span>
+          <h3 className="text-lg font-semibold mb-3">Low Stock</h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {lowStockMeds.slice(0,10).map(m => (
+              <div key={m.id} className="flex items-center justify-between border rounded-md p-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{m.name}</div>
+                  <div className="text-xs text-gray-500">{m.strength} • {m.dosageForm}</div>
                 </div>
-                <span className="font-medium">{s.value}</span>
+                <button onClick={() => openAddStock(m.id)} className="text-sm px-2 py-1 border rounded-md hover:bg-green-50 text-green-700">
+                  Add Stock
+                </button>
               </div>
             ))}
+            {lowStockMeds.length === 0 && <div className="text-sm text-muted-foreground">No low stock items.</div>}
+          </div>
+        </div>
+        <div className="bg-card rounded-lg border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold">Expiring Soon ({expSoonDays}d)</h3>
+            <select
+              value={String(expSoonDays)}
+              onChange={(e) => setExpSoonDays(Number(e.target.value))}
+              className="border rounded-md text-sm px-2 py-1"
+            >
+              <option value="30">30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+            </select>
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {expiringSoonItems.map(it => (
+              <div key={`${it.medId}-${it.batchNumber}`} className="flex items-center justify-between border rounded-md p-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{it.medName}</div>
+                  <div className="text-xs text-gray-500">Batch {it.batchNumber} • {it.expiryDate}</div>
+                </div>
+                <button onClick={() => openViewBatches(it.medId)} className="text-sm px-2 py-1 border rounded-md hover:bg-blue-50 text-blue-700">
+                  View Batches
+                </button>
+              </div>
+            ))}
+            {expiringSoonItems.length === 0 && <div className="text-sm text-muted-foreground">No expiring batches in selected window.</div>}
+          </div>
+        </div>
+        <div className="bg-card rounded-lg border p-4">
+          <h3 className="text-lg font-semibold mb-3">Out of Stock</h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {outOfStockMeds.slice(0,10).map(m => (
+              <div key={m.id} className="flex items-center justify-between border rounded-md p-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{m.name}</div>
+                  <div className="text-xs text-gray-500">{m.strength} • {m.dosageForm}</div>
+                </div>
+                <button onClick={() => openAddStock(m.id)} className="text-sm px-2 py-1 border rounded-md hover:bg-red-50 text-red-700">
+                  Restock
+                </button>
+              </div>
+            ))}
+            {outOfStockMeds.length === 0 && <div className="text-sm text-muted-foreground">No out-of-stock items.</div>}
           </div>
         </div>
       </div>
 
-      {/* Analytics Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="bg-card rounded-lg border p-4">
+          <PrescriptiveRecommendations medicines={medicines} />
+        </div>
+        <div className="bg-card rounded-lg border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold">Stock Status</h3>
+            <span className="text-xs text-muted-foreground">Window: {expSoonDays}d</span>
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="w-full max-w-xs">
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Normal', value: stockStatusCounts.normal, color: '#22c55e' },
+                      { name: 'Low Stock', value: stockStatusCounts.low, color: '#f59e0b' },
+                      { name: 'Expiring Soon', value: stockStatusCounts.expSoon, color: '#3b82f6' },
+                      { name: 'Expired', value: stockStatusCounts.expired, color: '#ef4444' },
+                    ]}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={2}
+                  >
+                    <Cell fill="#22c55e" />
+                    <Cell fill="#f59e0b" />
+                    <Cell fill="#3b82f6" />
+                    <Cell fill="#ef4444" />
+                  </Pie>
+                  <RTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-2 gap-3 w-full max-w-sm mt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#22c55e' }}></span>
+                  <span className="text-sm">Normal</span>
+                </div>
+                <span className="text-sm font-semibold">{stockStatusCounts.normal}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#f59e0b' }}></span>
+                  <span className="text-sm">Low Stock</span>
+                </div>
+                <span className="text-sm font-semibold">{stockStatusCounts.low}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#3b82f6' }}></span>
+                  <span className="text-sm">Expiring Soon</span>
+                </div>
+                <span className="text-sm font-semibold">{stockStatusCounts.expSoon}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#ef4444' }}></span>
+                  <span className="text-sm">Expired</span>
+                </div>
+                <span className="text-sm font-semibold">{stockStatusCounts.expired}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="bg-card rounded-lg border p-4 mb-6">
+        <h3 className="text-lg font-semibold mb-3">Recent Activity</h3>
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          {recentLogs.map(log => (
+            <div key={log.id} className="flex items-center justify-between border rounded-md p-2">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{log.userName} • {log.action}</div>
+                <div className="text-xs text-gray-500">{log.entityName || log.entityType} • {new Date(log.timestamp?.toDate ? log.timestamp.toDate() : log.timestamp).toLocaleString()}</div>
+              </div>
+            </div>
+          ))}
+          {recentLogs.length === 0 && <div className="text-sm text-muted-foreground">No recent activity.</div>}
+        </div>
+      </div>
+
+      {statusModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+              <h2 className="text-xl font-semibold">
+                {statusModal.type === 'low' && 'Low Stock Items'}
+                {statusModal.type === 'soon' && 'Expiring Soon Batches'}
+                {statusModal.type === 'out' && 'Out of Stock Items'}
+              </h2>
+              <button
+                onClick={() => setStatusModal({ open: false, type: null })}
+                className="p-2 hover:bg-gray-100 rounded-md"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4">
+              {statusModal.type === 'low' && (
+                <div className="space-y-2">
+                  {lowStockMeds.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No low stock items.</div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="text-left p-2">Medicine</th>
+                          <th className="text-right p-2">Stock</th>
+                          <th className="text-right p-2">Min Level</th>
+                          <th className="text-right p-2">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lowStockMeds.map((m) => (
+                          <tr key={m.id} className="border-t">
+                            <td className="p-2">{m.name} <span className="text-xs text-gray-500">({m.strength} • {m.dosageForm})</span></td>
+                            <td className="p-2 text-right">{m.totalQuantity || 0}</td>
+                            <td className="p-2 text-right">{Math.max(50, Number(m.minStockLevel || 0))}</td>
+                            <td className="p-2 text-right">
+                              <button onClick={() => openAddStock(m.id)} className="px-2 py-1 border rounded-md text-sm hover:bg-green-50 text-green-700">
+                                Add Stock
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+              {statusModal.type === 'soon' && (
+                <div className="space-y-2">
+                  {expiringSoonItems.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No expiring batches in 30 days.</div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="text-left p-2">Medicine</th>
+                          <th className="text-left p-2">Batch</th>
+                          <th className="text-left p-2">Expiry</th>
+                          <th className="text-right p-2">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expiringSoonItems.map((it, idx) => (
+                          <tr key={`${it.medId}-${it.batchNumber}-${idx}`} className="border-t">
+                            <td className="p-2">{it.medName}</td>
+                            <td className="p-2">{it.batchNumber}</td>
+                            <td className="p-2">{it.expiryDate}</td>
+                            <td className="p-2 text-right">
+                              <button onClick={() => openViewBatches(it.medId)} className="px-2 py-1 border rounded-md text-sm hover:bg-blue-50 text-blue-700">
+                                View Batches
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+              {statusModal.type === 'out' && (
+                <div className="space-y-2">
+                  {outOfStockMeds.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No out-of-stock items.</div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-muted-foreground">
+                          <th className="text-left p-2">Medicine</th>
+                          <th className="text-right p-2">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {outOfStockMeds.map((m) => (
+                          <tr key={m.id} className="border-t">
+                            <td className="p-2">{m.name} <span className="text-xs text-gray-500">({m.strength} • {m.dosageForm})</span></td>
+                            <td className="p-2 text-right">
+                              <button onClick={() => openAddStock(m.id)} className="px-2 py-1 border rounded-md text-sm hover:bg-red-50 text-red-700">
+                                Restock
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Sales last 7 days */}
+      <div className="bg-card rounded-lg border p-4 mb-6">
+        <h3 className="text-lg font-semibold mb-3">Sales (Last 7 days)</h3>
+        <ChartContainer config={{ total: { label: 'Revenue', color: '#3b82f6' } }} className="aspect-[16/6]">
+          <LineChart data={last7DaysRevenueStrict}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} />
+            <YAxis fontSize={12} tickLine={false} axisLine={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Line type="monotone" dataKey="total" stroke="var(--color-total, #3b82f6)" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ChartContainer>
+      </div>
+
+      {/* Analytics Overview (moved to Analytics page) */}
+      {false && (
       <div className="mb-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Analytics Overview</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -559,7 +1021,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             color="bg-sky-100 text-sky-800 border-sky-200"
           />
           <StatsCard
-            title="Total Sales"
+            title="Sales Transactions"
             value={revenueKPIs.totalSales}
             icon={Package}
             color="bg-emerald-100 text-emerald-800 border-emerald-200"
@@ -571,8 +1033,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             color="bg-violet-100 text-violet-800 border-violet-200"
           />
           <StatsCard
-            title="Products"
-            value={revenueKPIs.products}
+              title="Unique Medicines"
+            value={revenueKPIs.uniqueMedicinesCount}
             icon={Package}
             color="bg-indigo-100 text-indigo-800 border-indigo-200"
           />
@@ -610,6 +1072,126 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
         </div>
 
+        <div className="bg-white rounded-lg shadow-sm p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Demand Forecast</h2>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600">Select Medicine</label>
+              <select
+                value={selectedMedicineId}
+                onChange={(e) => setSelectedMedicineId(e.target.value)}
+                className="px-3 py-1.5 border rounded-md text-sm"
+              >
+                <option value="">-- Choose --</option>
+                {medicines.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.strength} - {m.dosageForm})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {selectedMedicineId ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg border p-4">
+                    <p className="text-xs text-gray-600">Avg Daily Sales</p>
+                    <p className="text-xl font-bold">{forecastData.dailyUsage.toFixed(1)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg border p-4">
+                    <p className="text-xs text-gray-600">Predicted 30-day Demand</p>
+                    <p className="text-xl font-bold">{Math.round(forecastData.predicted30)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg border p-4">
+                    <p className="text-xs text-gray-600">Days Remaining</p>
+                    <p className="text-xl font-bold">{forecastData.daysRemaining != null ? Math.max(0, forecastData.daysRemaining) : 'N/A'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg border p-4">
+                    <p className="text-xs text-gray-600">Stock-out Date</p>
+                    <p className="text-xl font-bold">{forecastData.stockoutDate ? new Date(forecastData.stockoutDate).toLocaleDateString() : 'N/A'}</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg border p-4">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Sales Trend (Last Month)</h4>
+                  <div style={{ width: '100%', height: 240 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={forecastSeries}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="bg-white rounded-lg border p-4">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Forecast (Next 30 days)</h4>
+                  <div style={{ width: '100%', height: 240 }}>
+                    <ResponsiveContainer>
+                      <LineChart
+                        data={[
+                          ...forecastSeries.map(d => ({ label: d.label, actual: d.units, predicted: null })),
+                          ...Array.from({ length: 30 }).map((_, i) => {
+                            const future = new Date();
+                            future.setDate(future.getDate() + i + 1);
+                            return {
+                              label: `${future.getMonth()+1}/${future.getDate()}`,
+                              actual: null,
+                              predicted: forecastData.dailyUsage,
+                            };
+                          }),
+                        ]}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="actual" stroke="#374151" name="Actual" dot={false} />
+                        <Line type="monotone" dataKey="predicted" stroke="#10B981" name="Predicted/day" strokeDasharray="5 5" dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg border p-4">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Stock vs Reorder</h4>
+                  <div style={{ width: '100%', height: 240 }}>
+                    <ResponsiveContainer>
+                      <BarChart
+                        data={[
+                          { name: 'Current Stock', value: Number((medicines.find(m => m.id === selectedMedicineId)?.totalQuantity) || 0) },
+                          { name: 'Reorder Point', value: Math.round(forecastData.reorderPoint) },
+                          { name: 'Predicted 30-day', value: Math.round(forecastData.predicted30) },
+                        ]}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="value">
+                          <Cell fill="#22c55e" />
+                          <Cell fill="#f59e0b" />
+                          <Cell fill="#ef4444" />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-2">
+                    <span className="inline-block w-3 h-3 rounded-sm mr-2" style={{ backgroundColor: '#22c55e' }}></span>Safe
+                    <span className="inline-block w-3 h-3 rounded-sm mx-2" style={{ backgroundColor: '#f59e0b' }}></span>Near reorder
+                    <span className="inline-block w-3 h-3 rounded-sm mx-2" style={{ backgroundColor: '#ef4444' }}></span>Stock-out soon
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Select a medicine to view forecast.</p>
+          )}
+        </div>
           <div className="mb-6">
             <SalesByMedicineStats receipts={receipts} medicines={medicines} />
           </div>
@@ -659,7 +1241,9 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
         </div>
       </div>
+      )}
 
+      {false && (
       <div className="mt-8">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Advanced Analytics</h2>
         <div className="bg-card rounded-lg border p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -795,8 +1379,9 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
         </div>
       </div>
-      {/* Low Stock Alerts List */}
-      {(() => {
+      )}
+      {/* Low Stock Alerts List (removed in clean dashboard) */}
+      {false && (() => {
         const lowStockItems = medicines.filter(m => {
           const qty = m.quantity || 0;
           const threshold = 50;
@@ -838,64 +1423,9 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         );
       })()}
 
-      {/* Status Modal */}
-      {statusModal.open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-              <h2 className="text-xl font-semibold">
-                {statusModal.type === 'low' && 'Low Stock Medicines'}
-                {statusModal.type === 'soon' && 'Expiring Soon Medicines'}
-                {statusModal.type === 'expired' && 'Expired Medicines'}
-              </h2>
-              <button
-                onClick={() => setStatusModal({ open: false, type: null })}
-                className="p-2 hover:bg-gray-100 rounded-md transition-colors"
-                aria-label="Close modal"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {medicines
-                  .filter(m => {
-                    const qty = m.quantity || 0;
-                    const threshold = 50;
-                    const today = new Date();
-                    const exp = m.expiryDate ? new Date(m.expiryDate) : null;
-                    const days = exp ? Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
-                    const isExpired = exp && exp < today;
-                    const isSoon = days !== null && days <= 90 && days > 0;
-                    if (statusModal.type === 'low') return threshold > 0 && qty <= threshold && !isExpired;
-                    if (statusModal.type === 'soon') return isSoon;
-                    if (statusModal.type === 'expired') return isExpired;
-                    return false;
-                  })
-                  .map(m => (
-                    <div key={m.id} className="rounded-lg border p-4 bg-card">
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-semibold text-card-foreground truncate pr-2">{m.name || 'Unknown'}</h3>
-                        <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">{m.category || 'Uncategorized'}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                        <span className="text-muted-foreground">Stock</span>
-                        <span className="font-medium text-card-foreground">{m.quantity || 0} {m.unit || 'units'}</span>
-                        <span className="text-muted-foreground">Expiry</span>
-                        <span className="font-medium text-card-foreground">{m.expiryDate || 'N/A'}</span>
-                        <span className="text-muted-foreground">Price</span>
-                        <span className="font-medium text-card-foreground">
-                          {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(m.price || 0)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Status Modal (legacy duplicate removed) */}
 
+      {false && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Search, Filters, Medicine Grid */}
         <div className="lg:col-span-2 space-y-6">
@@ -993,7 +1523,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                     </div>
                   </div>
                 );
-              })}
+      })()}
             </div>
           )}
         </div>
@@ -1001,6 +1531,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         {/* Right Column: Charts & Recommendations */}
         <div className="space-y-6"></div>
       </div>
+      )}
 
       {/* Category Overview */}
       <div className="mt-8">
@@ -1035,6 +1566,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         <MedicineForm
           medicine={editingMedicine}
           categories={categories}
+          existingMedicines={medicines}
           onSubmit={editingMedicine ? handleUpdateMedicine : handleAddMedicine}
           onClose={handleCloseForm}
         />

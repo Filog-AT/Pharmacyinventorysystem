@@ -7,11 +7,38 @@ export function SalesByMedicineStats({ receipts = [], medicines = [] }) {
   const stockMap = useMemo(() => {
     const map = new Map();
     (medicines || []).forEach(m => {
-      if (m.id) map.set(m.id, m.quantity || 0);
-      if (m.name) map.set(m.name, m.quantity || 0);
+      if (m.id) map.set(m.id, m.totalQuantity || 0);
+      if (m.name) map.set(m.name, m.totalQuantity || 0);
     });
     return map;
   }, [medicines]);
+
+  const avgDailyByMedicine = useMemo(() => {
+    // Compute average daily sold over the last 30 days for each medicine
+    const dayMap = new Map(); // id -> Map(day, qty)
+    const today = new Date();
+    const cutoff = new Date(today.getTime() - 30 * 86400000);
+    (receipts || []).forEach(r => {
+      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
+      if (isNaN(ts.getTime()) || ts < cutoff) return;
+      const dayKey = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}`;
+      if (!Array.isArray(r.items)) return;
+      r.items.forEach(it => {
+        const id = it.medicineId || it.name;
+        if (!id) return;
+        const map = dayMap.get(id) || new Map();
+        map.set(dayKey, (map.get(dayKey) || 0) + Number(it.quantity || 0));
+        dayMap.set(id, map);
+      });
+    });
+    const avgMap = new Map();
+    dayMap.forEach((map, id) => {
+      const values = Array.from(map.values());
+      const avg = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+      avgMap.set(id, avg);
+    });
+    return avgMap;
+  }, [receipts]);
 
   const aggregatedData = useMemo(() => {
     const now = new Date();
@@ -177,7 +204,8 @@ export function SalesByMedicineStats({ receipts = [], medicines = [] }) {
             <tbody className="divide-y">
               {aggregatedData.map((item, idx) => {
                 const stock = stockMap.get(item.key) ?? stockMap.get(item.name) ?? 0;
-                const daysLeft = null; // Simple version without velocity here
+                const velocity = avgDailyByMedicine.get(item.key) ?? avgDailyByMedicine.get(item.name) ?? 0;
+                const daysLeft = velocity > 0 ? Math.floor(stock / velocity) : null;
                 return (
                   <tr key={idx} className="hover:bg-muted/50 transition-colors">
                     <td className="px-3 py-2 font-medium truncate max-w-[150px]" title={item.name}>

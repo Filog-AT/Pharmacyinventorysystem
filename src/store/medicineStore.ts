@@ -1,15 +1,31 @@
 import { create } from 'zustand';
 
+export interface Batch {
+  id: string;
+  batchNumber: string;
+  expiryDate: string;
+  supplier: string;
+  quantity: number; // Current remaining quantity
+  initialQuantity: number; // Total units at time of receipt
+  purchasePrice: number; // Price per box/unit as entered
+  boxesReceived: number;
+  blistersPerBox: number;
+  unitsPerBlister: number;
+  createdAt: string;
+}
+
 export interface Medicine {
   id: string;
   name: string;
   category: string;
-  quantity: number;
-  unit: string;
+  dosageForm: string; // tablet, capsule, etc.
+  strength: string; // e.g., 500mg
+  unit: string; // The base unit (e.g., tablets)
   minStockLevel: number;
-  expiryDate: string;
-  supplier: string;
-  price: number;
+  price: number; // Selling price per base unit
+  batches: Batch[];
+  totalQuantity: number; // Sum of all NON-EXPIRED batch quantities
+  createdAt: string;
 }
 
 interface MedicineStore {

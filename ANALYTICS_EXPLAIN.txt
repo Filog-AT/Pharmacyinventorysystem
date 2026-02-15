@@ -1,0 +1,134 @@
+Analytics Overview
+
+This section summarizes what each chart and metric in Analytics shows and how it is computed.
+
+1) Demand Forecast (selected medicine)
+- Actual usage: Displays the last up-to-15 historical points for the chosen time scale (day/month/year).
+- Predicted line (15 future points): Uses a simple linear regression over the last 15 actual points to project future daily usage. Values are clamped to zero or above.
+- Reorder panel: 
+  • Current Stock: Current totalQuantity for the selected medicine. 
+  this is the amount of medicine you physically still have.
+
+your system should compute:
+sum of all remaining units from all batches
+example:
+Batch A → 120 tablets
+Batch B → 80 tablets
+Current Stock = 200 tablets
+this is not boxes.
+always tablets/capsules (units).
+
+what it tells the manager:
+“how much medicine is left right now?”
+but alone, this number is useless.
+because 200 tablets could last 2 days… or 2 months.
+that’s why the next values exist.
+
+  • Reorder Point: Based on recent usage and a default service-level buffer. 
+  this estimates:
+how many tablets we will probably sell in the next 30 days
+you calculate from past sales.
+
+formula:
+daily usage = total sold in last 30 days ÷ 30
+predicted 30-day demand = daily usage × 30
+
+example:
+sold last 30 days = 900 tablets
+daily usage = 900 ÷ 30 = 30 tablets/day
+predicted 30-day demand = 30 × 30 = 900 tablets
+now the manager understands consumption speed.
+why this is important
+
+now 200 tablets means:
+200 ÷ 30 per day = 6.6 days
+so stock is actually almost gone.
+without prediction, 200 looks like “a lot”.
+
+  • Predicted 30-day: Sum of the next 30 days of predicted daily usage.
+  this is the warning level.
+
+it answers:
+at what stock level should i place a new order?
+you don’t wait for zero stock.
+because suppliers need delivery time.
+you add a safety buffer.
+
+formula:
+reorder point = daily usage × buffer days
+recommended buffer: 7–14 days (use 10 days)
+
+example:
+daily usage = 30 tablets/day
+buffer = 10 days
+reorder point = 30 × 10 = 300 tablets
+
+meaning:
+when stock reaches 300 → order now.
+not because you’re out,
+but because you soon will be.
+how they work together
+example situation:
+Current Stock = 200 tablets
+Predicted 30-day demand = 900 tablets
+Reorder Point = 300 tablets
+
+interpretation:
+you sell 30/day
+you only have 200
+you will run out in about 6–7 days
+supplier might take 5 days to deliver
+so the system should show:
+REORDER NOW
+
+another case:
+Current Stock = 1,500 tablets
+Predicted 30-day demand = 900 tablets
+Reorder Point = 300 tablets
+
+interpretation:
+you have more than 1 month stock.
+
+system shows:
+Stock OK
+what your system should display to user
+
+example:
+Paracetamol 500mg
+Current Stock: 200 tablets
+Avg usage: 30/day
+Predicted demand (30 days): 900 tablets
+Reorder Point: 300 tablets
+Estimated stock-out: 6 days
+
+Status:
+🔴 Reorder recommended
+simple understanding
+Current Stock → what you have
+Predicted Demand → how fast it is used
+Reorder Point → when you should buy again
+together they prevent:
+stock-outs
+emergency buying
+lost sales
+patient inconvenience
+this is actually the core purpose of inventory systems.
+
+2) Stock by Category
+- Pie distribution of totalQuantity grouped by category.
+- Tooltip lists the top medicines (by units) within the hovered category.
+
+3) Total Stock per Medicine
+- Shows the top 20 medicines by stock, labeled with name, strength, and dosage form.
+- X-axis labels are angled and shortened for readability.
+
+4) Medicines Nearing Expiration
+- Bar chart by time bucket: ≤7 days, 8–14, 15–30, and >30 days.
+- Also provides a tabular list below with medicine, batch number, and expiry date.
+
+5) Usage Trend (selected medicine)
+- When “Day” is chosen, the chart limits to the last 30 daily points to keep it readable.
+
+Assumptions and Notes
+- All computations use in-app state and Firebase data (receipts, medicines, batches). 
+- Expired batches are excluded from stock totals; FEFO is enforced on sales at the service layer.

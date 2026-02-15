@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useState } from 'react';
 import { Search, Package } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
 import { SalesByMedicineStats } from '@/app/components/SalesByMedicineStats';
 
 export function StaffDashboard({ medicines = [] }) {
@@ -65,10 +65,65 @@ export function StaffDashboard({ medicines = [] }) {
     (medicines || []).forEach(m => {
       const key = m.category || 'Uncategorized';
       const prev = map.get(key) || 0;
-      map.set(key, prev + (m.quantity || 0));
+      map.set(key, prev + (m.totalQuantity || 0));
     });
     return Array.from(map.entries()).map(([name, qty]) => ({ name, quantity: qty }));
   }, [medicines]);
+
+  const expiringSoon = useMemo(() => {
+    const today = new Date();
+    const in30 = new Date(today.getTime() + 30 * 86400000);
+    const items = [];
+    (medicines || []).forEach(m => {
+      if (Array.isArray(m.batches)) {
+        m.batches.forEach(b => {
+          if (!b.expiryDate) return;
+          const d = new Date(b.expiryDate);
+          if (d >= today && d <= in30) {
+            items.push({
+              medId: m.id,
+              name: m.name,
+              batch: b.batchNumber || b.id,
+              expiry: d.toISOString().slice(0,10),
+            });
+          }
+        });
+      }
+    });
+    items.sort((a, b) => a.expiry.localeCompare(b.expiry));
+    return items.slice(0, 8);
+  }, [medicines]);
+
+  const CategoryTooltip = ({ active, payload }) => {
+    if (!active || !payload || payload.length === 0) return null;
+    const cat = payload[0]?.payload?.name;
+    const catMeds = (medicines || [])
+      .filter(m => (m.category || 'Uncategorized') === cat)
+      .map(m => ({ name: m.name, qty: Number(m.totalQuantity || 0) }));
+    const totalQty = catMeds.reduce((s, it) => s + it.qty, 0);
+    const items = catMeds.sort((a, b) => b.qty - a.qty).slice(0, 8);
+    return (
+      <div className="bg-white border rounded-md p-3 shadow-sm text-sm">
+        <div className="font-semibold mb-1">{cat}</div>
+        {items.length === 0 ? (
+          <div className="text-xs text-gray-500">No items</div>
+        ) : (
+          <ul className="space-y-0.5">
+            {items.map((it, idx) => (
+              <li key={idx} className="flex justify-between gap-3">
+                <span className="truncate max-w-[180px]" title={it.name}>{it.name}</span>
+                <span className="font-medium">{it.qty}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-2 pt-2 border-t text-xs flex justify-between">
+          <span className="text-gray-500">Total</span>
+          <span className="font-semibold">{totalQty}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -106,7 +161,7 @@ export function StaffDashboard({ medicines = [] }) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <RTooltip content={<CategoryTooltip />} />
               <Bar dataKey="quantity" fill="var(--color-quantity, #3b82f6)" />
             </BarChart>
           </ChartContainer>
@@ -115,6 +170,34 @@ export function StaffDashboard({ medicines = [] }) {
 
       <div className="mb-6">
         <SalesByMedicineStats receipts={receipts} />
+      </div>
+
+      <div className="bg-card rounded-lg border p-4 mb-6">
+        <h2 className="text-lg font-semibold text-card-foreground mb-3">Near-Expiring Batches (30 days)</h2>
+        {expiringSoon.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No batches expiring within 30 days.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-muted-foreground">
+                  <th className="text-left p-2">Medicine</th>
+                  <th className="text-left p-2">Batch</th>
+                  <th className="text-left p-2">Expiry</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expiringSoon.map((e, idx) => (
+                  <tr key={idx} className="border-t">
+                    <td className="p-2">{e.name}</td>
+                    <td className="p-2">{e.batch}</td>
+                    <td className="p-2">{e.expiry}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {(medicines || []).length === 0 && (
