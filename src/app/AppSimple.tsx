@@ -156,6 +156,14 @@ function AppSimple() {
 
   useEffect(() => {
     try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    } catch {
+      try { window.scrollTo(0, 0); } catch {}
+    }
+  }, [activePage]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem('pharmacy_settings', JSON.stringify(settings));
     } catch {}
   }, [settings]);

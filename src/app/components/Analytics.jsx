@@ -137,24 +137,40 @@ export function Analytics({ medicines = [], categories = [] }) {
 
   const nearingExpiryBuckets = useMemo(() => {
     const buckets = new Map([
-      ['0-7d', 0], ['8-14d', 0], ['15-30d', 0], ['31-60d', 0], ['61-90d', 0]
+      ['0-7d', { count: 0, items: [] }],
+      ['8-14d', { count: 0, items: [] }],
+      ['15-30d', { count: 0, items: [] }],
+      ['31-60d', { count: 0, items: [] }],
+      ['61-90d', { count: 0, items: [] }],
     ]);
     const today = new Date();
     medicines
       .filter(m => filterCategory === 'All' || m.category === filterCategory)
       .forEach(m => {
-      (m.batches || []).forEach(b => {
-        const exp = b.expiryDate ? new Date(b.expiryDate) : null;
-        if (!exp || isNaN(exp.getTime())) return;
-        const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (days <= 7 && days >= 0) buckets.set('0-7d', buckets.get('0-7d') + 1);
-        else if (days <= 14 && days > 7) buckets.set('8-14d', buckets.get('8-14d') + 1);
-        else if (days <= 30 && days > 14) buckets.set('15-30d', buckets.get('15-30d') + 1);
-        else if (days <= 60 && days > 30) buckets.set('31-60d', buckets.get('31-60d') + 1);
-        else if (days <= 90 && days > 60) buckets.set('61-90d', buckets.get('61-90d') + 1);
+        (m.batches || []).forEach(b => {
+          const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+          if (!exp || isNaN(exp.getTime())) return;
+          const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          let key = null;
+          if (days <= 7 && days >= 0) key = '0-7d';
+          else if (days <= 14 && days > 7) key = '8-14d';
+          else if (days <= 30 && days > 14) key = '15-30d';
+          else if (days <= 60 && days > 30) key = '31-60d';
+          else if (days <= 90 && days > 60) key = '61-90d';
+          if (key) {
+            const entry = buckets.get(key);
+            entry.count += 1;
+            entry.items.push({
+              medicine: m.name || 'Unknown',
+              batchNumber: b.batchNumber || '—',
+              quantity: Number(b.quantity || 0),
+              expiryDate: b.expiryDate || '',
+            });
+            buckets.set(key, entry);
+          }
+        });
       });
-    });
-    return Array.from(buckets.entries()).map(([label, value]) => ({ label, value }));
+    return Array.from(buckets.entries()).map(([label, data]) => ({ label, value: data.count, items: data.items }));
   }, [medicines, filterCategory]);
 
   const availabilityCards = useMemo(() => {
@@ -171,6 +187,35 @@ export function Analytics({ medicines = [], categories = [] }) {
     return { uniqueSKU, totalUnits, lowStock, expired };
   }, [medicines]);
 
+  const NearingTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const p = payload[0];
+      const label = p?.payload?.label;
+      const value = p?.payload?.value;
+      const items = Array.isArray(p?.payload?.items) ? p.payload.items : [];
+      const rows = items.slice(0, 6);
+      return (
+        <div className="rounded-md border bg-white p-2 text-xs shadow-sm">
+          <div className="font-medium">{label}</div>
+          <div className="text-muted-foreground mb-1">{value} batches</div>
+          {rows.length > 0 && (
+            <div className="space-y-0.5">
+              {rows.map((it, idx) => (
+                <div key={idx} className="flex justify-between gap-2">
+                  <span className="truncate max-w-[160px]">{it.medicine}</span>
+                  <span className="text-muted-foreground">Batch {it.batchNumber}</span>
+                </div>
+              ))}
+              {items.length > rows.length && (
+                <div className="text-muted-foreground">+{items.length - rows.length} more</div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return null;
+  };
   // Usage Trend and Forecast for selected medicine
   useEffect(() => {
     let mounted = true;
@@ -419,7 +464,7 @@ export function Analytics({ medicines = [], categories = [] }) {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <ChartTooltip content={<ChartTooltipContent />} />
+                <RTooltip content={<NearingTooltip />} />
                 <Bar dataKey="value" fill="#F59E0B" />
               </BarChart>
             </ResponsiveContainer>

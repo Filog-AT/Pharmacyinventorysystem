@@ -811,7 +811,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                 <PieChart>
                   <Pie
                     data={[
-                      { name: 'Normal', value: stockStatusCounts.normal, color: '#22c55e' },
+                      { name: 'Normal Stock', value: stockStatusCounts.normal, color: '#22c55e' },
                       { name: 'Low Stock', value: stockStatusCounts.low, color: '#f59e0b' },
                       { name: 'Expiring Soon', value: stockStatusCounts.expSoon, color: '#3b82f6' },
                       { name: 'Expired', value: stockStatusCounts.expired, color: '#ef4444' },
@@ -835,7 +835,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#22c55e' }}></span>
-                  <span className="text-sm">Normal</span>
+                  <span className="text-sm">Normal Stock</span>
                 </div>
                 <span className="text-sm font-semibold">{stockStatusCounts.normal}</span>
               </div>
