@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen } from 'lucide-react';
 import { auditService } from '@/services/auditService';
 import { toast } from 'sonner';
 
 export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings, currentUser, medicines = [] }) {
   const [localPharmacyName, setLocalPharmacyName] = useState(settings?.pharmacyName || '');
+  
+  // Sync local state with prop settings if it changes externally
+  useEffect(() => {
+    setLocalPharmacyName(settings?.pharmacyName || '');
+  }, [settings?.pharmacyName]);
+
   const [demoCount, setDemoCount] = useState('100');
   const [demoMonths, setDemoMonths] = useState(6);
   const [generating, setGenerating] = useState(false);
@@ -72,6 +78,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               const beforeName = settings?.pharmacyName || '';
               const afterName = localPharmacyName || '';
               onUpdateSettings?.({ ...settings, pharmacyName: afterName });
+              toast.success('Pharmacy name updated');
               if (beforeName !== afterName) {
                 try {
                   await auditService.logAction({
@@ -431,7 +438,13 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               </select>
             </div>
           </div>
-          <button className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium">
+          <button
+            className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium"
+            onClick={() => {
+              onUpdateSettings?.({ ...settings, pharmacyName: localPharmacyName, theme: settings.theme });
+              toast.success('Display settings applied');
+            }}
+          >
             Apply Settings
           </button>
         </div>

@@ -357,40 +357,16 @@ export function Analytics({ medicines = [], categories = [] }) {
         </div>
       </section>
 
-      {/* Usage & Sales */}
+      {/* Usage & Sales Summary */}
       <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Usage & Sales</h2>
-
-        <div className="bg-card rounded-lg border p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium">Medicine Usage Trend</h3>
-            <div className="flex items-center gap-2">
-              <select value={selectedMedicineId} onChange={e => setSelectedMedicineId(e.target.value)} className="px-3 py-1.5 border rounded-md text-sm">
-                <option value="">-- Select Medicine --</option>
-                {medicines.map(m => <option key={m.id} value={m.id}>{m.name} ({m.strength} - {m.dosageForm})</option>)}
-              </select>
-              <select value={timeScale} onChange={e => setTimeScale(e.target.value)} className="px-3 py-1.5 border rounded-md text-sm">
-                <option value="day">Daily</option>
-                <option value="week">Weekly</option>
-                <option value="month">Monthly</option>
-              </select>
-            </div>
-          </div>
-          <ChartContainer config={{ units: { label: 'Units sold', color: '#3b82f6' } }} className="aspect-[16/6]">
-            <LineChart data={selectedSeries}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
-              <YAxis />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Line type="monotone" dataKey="units" stroke="#3B82F6" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ChartContainer>
-        </div>
-
+        <h2 className="text-xl font-semibold">Usage & Sales Summary</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-card rounded-lg border p-4">
+          <div className="bg-white rounded-lg border p-4">
             <h3 className="font-medium mb-3">Revenue Trend (Monthly)</h3>
-            <ChartContainer config={{ total: { label: 'Revenue', color: '#3b82f6' } }} className="aspect-[16/9]">
+            <ChartContainer
+              config={{ total: { label: 'Revenue', color: '#3b82f6' } }}
+              className="aspect-[16/9]"
+            >
               <LineChart data={monthlyRevenue}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} />
@@ -400,9 +376,12 @@ export function Analytics({ medicines = [], categories = [] }) {
               </LineChart>
             </ChartContainer>
           </div>
-          <div className="bg-card rounded-lg border p-4">
-            <h3 className="font-medium mb-3">Sales Volume</h3>
-            <ChartContainer config={{ count: { label: 'Transactions', color: '#10b981' } }} className="aspect-[16/9]">
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-medium mb-3">Sales Volume (Monthly)</h3>
+            <ChartContainer
+              config={{ count: { label: 'Transactions', color: '#10b981' } }}
+              className="aspect-[16/9]"
+            >
               <BarChart data={monthlyCounts}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} />
@@ -413,7 +392,7 @@ export function Analytics({ medicines = [], categories = [] }) {
             </ChartContainer>
           </div>
         </div>
-        <div className="bg-card rounded-lg border p-4">
+        <div className="mt-6">
           <SalesByMedicineStats receipts={receipts} medicines={medicines} />
         </div>
       </section>
@@ -421,189 +400,33 @@ export function Analytics({ medicines = [], categories = [] }) {
       {/* Inventory Status */}
       <section className="space-y-4">
         <h2 className="text-xl font-semibold">Inventory Status</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-card rounded-lg border p-4">
-            <h3 className="font-medium mb-3">Stock by Category</h3>
-            <ChartContainer config={{ value: { label: 'Units', color: '#3b82f6' } }} className="aspect-[16/9]">
-              <PieChart>
-                <Pie data={stockByCategory} dataKey="value" nameKey="name" outerRadius={80} innerRadius={40} paddingAngle={2}>
-                  {stockByCategory.map((entry, index) => (
-                    <Cell key={`cat-${index}`} fill={entry.color} strokeWidth={0} />
-                  ))}
-                </Pie>
-                <RTooltip content={<CategoryTooltip />} />
-              </PieChart>
-            </ChartContainer>
-          </div>
-          <div className="bg-card rounded-lg border p-4">
-            <h3 className="font-medium mb-3">Total Stock per Medicine (Top 20)</h3>
-            <ChartContainer config={{}}>
-              <BarChart data={stockPerMedicine}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: 9 }}
-                  interval={0}
-                  angle={-65}
-                  textAnchor="end"
-                  tickFormatter={(v) => (v && v.length > 14 ? v.slice(0, 14) + '…' : v)}
-                  height={90}
-                />
-                <YAxis />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="quantity" fill="#3B82F6" />
-              </BarChart>
-            </ChartContainer>
-          </div>
-        </div>
         <div className="bg-card rounded-lg border p-4">
-          <h3 className="font-medium mb-3">Medicines Nearing Expiration</h3>
+          <h3 className="font-medium mb-3">Total Stock per Medicine (Top 20)</h3>
           <ChartContainer config={{}}>
-            <ResponsiveContainer width="100%" height={120}>
-              <BarChart data={nearingExpiryBuckets}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" />
-                <YAxis />
-                <RTooltip content={<NearingTooltip />} />
-                <Bar dataKey="value" fill="#F59E0B" />
+            <ResponsiveContainer width="100%" height={500}>
+              <BarChart
+                data={stockPerMedicine}
+                layout="vertical"
+                margin={{ left: 120, right: 20, top: 10, bottom: 10 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={110}
+                  tick={{ fontSize: 12, fontWeight: 600, fill: '#374151' }}
+                  interval={0}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="quantity" fill="#3B82F6" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fontWeight: 600 }} />
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>
-          <div className="mt-4">
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground bg-muted/50">
-                <tr>
-                  <th className="px-3 py-2 text-left">Medicine</th>
-                  <th className="px-3 py-2 text-left">Batch</th>
-                  <th className="px-3 py-2 text-left">Expiry</th>
-                  <th className="px-3 py-2 text-right">Remaining</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {medicines
-                  .filter(m => filterCategory === 'All' || m.category === filterCategory)
-                  .flatMap(m => (m.batches || []).map(b => ({ m, b })))
-                  .filter(({ b }) => {
-                    const d = new Date(b.expiryDate);
-                    if (isNaN(d.getTime())) return false;
-                    const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
-                    return days > 0 && days <= 90;
-                  })
-                  .slice(0, 20)
-                  .map(({ m, b }, idx) => (
-                    <tr key={`${m.id}-${b.id || idx}`}>
-                      <td className="px-3 py-2">{m.name}</td>
-                      <td className="px-3 py-2">{b.batchNumber || '—'}</td>
-                      <td className="px-3 py-2">{b.expiryDate}</td>
-                      <td className="px-3 py-2 text-right">{b.quantity} {m.unit}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       </section>
 
-      {/* Forecasting */}
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Forecasting</h2>
-          <div className="bg-card rounded-lg border p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium">Demand Forecast (30-day MA)</h3>
-            <select value={selectedMedicineId} onChange={e => setSelectedMedicineId(e.target.value)} className="px-3 py-1.5 border rounded-md text-sm">
-              <option value="">-- Select Medicine --</option>
-              {medicines.map(m => <option key={m.id} value={m.id}>{m.name} ({m.strength} - {m.dosageForm})</option>)}
-            </select>
-          </div>
-          {selectedMedicineId ? (
-            <>
-          <ChartContainer config={{}}>
-                <ResponsiveContainer width="100%" height={280}>
-                  <LineChart
-                    data={(() => {
-                      const last14 = selectedSeries.slice(-14);
-                      const ys = last14.map((d) => Number(d.units || 0));
-                      const xs = last14.map((_, i) => i + 1);
-                      // Simple linear regression y = a*x + b
-                      const n = xs.length;
-                      const sumX = xs.reduce((s, v) => s + v, 0);
-                      const sumY = ys.reduce((s, v) => s + v, 0);
-                      const sumXY = xs.reduce((s, v, i) => s + v * ys[i], 0);
-                      const sumXX = xs.reduce((s, v) => s + v * v, 0);
-                      const denom = n * sumXX - sumX * sumX || 1;
-                      const a = (n * sumXY - sumX * sumY) / denom;
-                      const b = (sumY - a * sumX) / n;
-                      const future = Array.from({ length: 14 }).map((_, i) => {
-                        const dayIndex = n + i + 1;
-                        const y = Math.max(0, a * dayIndex + b);
-                        const dt = new Date(); dt.setDate(dt.getDate() + i + 1);
-                        return { label: `${dt.getMonth()+1}/${dt.getDate()}`, actual: null, predicted: y };
-                      });
-                      return [
-                        ...last14.map(d => ({ label: d.label, actual: d.units, predicted: null })),
-                        ...future
-                      ];
-                    })()}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <RTooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="actual" stroke="#374151" name="Actual" dot={false} />
-                    <Line type="monotone" dataKey="predicted" stroke="#10B981" name="Predicted/day" strokeDasharray="5 5" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                <div className="bg-white rounded-lg border p-4">
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Stock vs Reorder</h4>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart
-                      data={[
-                        { name: 'Current Stock', value: Number((medicines.find(m => m.id === selectedMedicineId)?.totalQuantity) || 0) },
-                        { name: 'Reorder Point', value: Math.round(forecastData.reorderPoint) },
-                        { name: 'Predicted 30-day', value: Math.round(forecastData.predicted30) },
-                      ]}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <RTooltip />
-                      <Bar dataKey="value">
-                        <Cell fill="#22c55e" />
-                        <Cell fill="#f59e0b" />
-                        <Cell fill="#ef4444" />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="bg-white rounded-lg border p-4">
-                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Stock-Out Prediction</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-600">Estimated days remaining</p>
-                      <p className="text-2xl font-bold">{forecastData.daysRemaining != null ? Math.max(0, forecastData.daysRemaining) : 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-600">Predicted stock-out date</p>
-                      <p className="text-2xl font-bold">{forecastData.stockoutDate ? new Date(forecastData.stockoutDate).toLocaleDateString() : 'N/A'}</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-xs text-gray-600">Reorder recommendation</p>
-                      <p className={`text-xl font-bold ${forecastData.dailyUsage > 0 && (medicines.find(m => m.id === selectedMedicineId)?.totalQuantity || 0) <= forecastData.reorderPoint ? 'text-red-600' : 'text-green-600'}`}>
-                        {forecastData.dailyUsage > 0 && (medicines.find(m => m.id === selectedMedicineId)?.totalQuantity || 0) <= forecastData.reorderPoint ? 'Reorder Now' : 'Sufficient Stock'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-gray-500">Select a medicine to view forecast.</p>
-          )}
-        </div>
-      </section>
+      {/* Forecasting removed */}
     </div>
   );
 }

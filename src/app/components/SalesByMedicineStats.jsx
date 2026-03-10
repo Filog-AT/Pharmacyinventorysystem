@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TrendingUp, Calendar, Clock } from 'lucide-react';
 
-export function SalesByMedicineStats({ receipts = [], medicines = [] }) {
+export function SalesByMedicineStats({ receipts = [], medicines = [], onlyDaily = false }) {
   const [timeFilter, setTimeFilter] = useState('day'); // 'day', 'month', 'year'
 
   const stockMap = useMemo(() => {
@@ -148,39 +148,40 @@ export function SalesByMedicineStats({ receipts = [], medicines = [] }) {
           <TrendingUp className="w-5 h-5 text-blue-600" />
           Sales by Medicine
         </h2>
-        
-        <div className="flex bg-muted p-1 rounded-md">
-          <button
-            onClick={() => setTimeFilter('day')}
-            className={`px-3 py-1 text-sm rounded-sm transition-colors ${
-              timeFilter === 'day' 
-                ? 'bg-background text-foreground shadow-sm font-medium' 
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Daily
-          </button>
-          <button
-            onClick={() => setTimeFilter('month')}
-            className={`px-3 py-1 text-sm rounded-sm transition-colors ${
-              timeFilter === 'month' 
-                ? 'bg-background text-foreground shadow-sm font-medium' 
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Monthly
-          </button>
-          <button
-            onClick={() => setTimeFilter('year')}
-            className={`px-3 py-1 text-sm rounded-sm transition-colors ${
-              timeFilter === 'year' 
-                ? 'bg-background text-foreground shadow-sm font-medium' 
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Yearly
-          </button>
-        </div>
+        {!onlyDaily && (
+          <div className="flex bg-muted p-1 rounded-md">
+            <button
+              onClick={() => setTimeFilter('day')}
+              className={`px-3 py-1 text-sm rounded-sm transition-colors ${
+                timeFilter === 'day' 
+                  ? 'bg-background text-foreground shadow-sm font-medium' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Daily
+            </button>
+            <button
+              onClick={() => setTimeFilter('month')}
+              className={`px-3 py-1 text-sm rounded-sm transition-colors ${
+                timeFilter === 'month' 
+                  ? 'bg-background text-foreground shadow-sm font-medium' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setTimeFilter('year')}
+              className={`px-3 py-1 text-sm rounded-sm transition-colors ${
+                timeFilter === 'year' 
+                  ? 'bg-background text-foreground shadow-sm font-medium' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Yearly
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="overflow-y-auto max-h-[400px]">

@@ -311,41 +311,44 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
               </div>
             </div>
 
-            <div>
-              <label htmlFor="quantity" className="block text-sm font-medium mb-1">
-                Quantity *
-              </label>
-              <input
-                type="number"
-                id="quantity"
-                name="quantity"
-                value={formData.quantity}
-                onChange={handleChange}
-                required={!medicine}
-                min="0"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={!!medicine}
-              />
-            </div>
+            {!medicine && (
+              <div>
+                <label htmlFor="quantity" className="block text-sm font-medium mb-1">
+                  Quantity *
+                </label>
+                <input
+                  type="number"
+                  id="quantity"
+                  name="quantity"
+                  value={formData.quantity}
+                  onChange={handleChange}
+                  required
+                  min="0"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
 
-            <div>
-              <label htmlFor="unit" className="block text-sm font-medium mb-1">
-                Unit *
-              </label>
-              <select
-                id="unit"
-                name="unit"
-                value={formData.unit}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="tablets">Tablets</option>
-                <option value="capsules">Capsules</option>
-                <option value="bottles">Bottles</option>
-                <option value="boxes">Boxes</option>
-              </select>
-            </div>
+            {!medicine && (
+              <div>
+                <label htmlFor="unit" className="block text-sm font-medium mb-1">
+                  Unit *
+                </label>
+                <select
+                  id="unit"
+                  name="unit"
+                  value={formData.unit}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="tablets">Tablets</option>
+                  <option value="capsules">Capsules</option>
+                  <option value="bottles">Bottles</option>
+                  <option value="boxes">Boxes</option>
+                </select>
+              </div>
+            )}
 
             {formData.unit === 'boxes' && !medicine && (
               <>
@@ -420,21 +423,22 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
               />
             </div>
 
-            <div>
-              <label htmlFor="expiryDate" className="block text-sm font-medium mb-1">
-                Expiry Date *
-              </label>
-              <input
-                type="date"
-                id="expiryDate"
-                name="expiryDate"
-                value={formData.expiryDate}
-                onChange={handleChange}
-                required={!medicine}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={!!medicine}
-              />
-            </div>
+            {!medicine && (
+              <div>
+                <label htmlFor="expiryDate" className="block text-sm font-medium mb-1">
+                  Expiry Date *
+                </label>
+                <input
+                  type="date"
+                  id="expiryDate"
+                  name="expiryDate"
+                  value={formData.expiryDate}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
 
           </div>
 

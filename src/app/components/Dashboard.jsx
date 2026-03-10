@@ -16,7 +16,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   const [showForm, setShowForm] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState(undefined);
   const [receipts, setReceipts] = useState([]);
-  const [statusModal, setStatusModal] = useState({ open: false, type: null }); // 'low' | 'soon' | 'expired'
+  const [statusModal, setStatusModal] = useState({ open: false, type: null, window: 30 }); // 'low' | 'soon' | 'expired'
   const [analyticsTimeScale, setAnalyticsTimeScale] = useState('day');
   const [analyticsStartDate, setAnalyticsStartDate] = useState('');
   const [analyticsEndDate, setAnalyticsEndDate] = useState('');
@@ -246,6 +246,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
     return medicines.filter(m => Number(m.totalQuantity || 0) <= 0);
   }, [medicines]);
   const [expSoonDays, setExpSoonDays] = useState(30);
+  // Removed expSoonDays from here
   const expiringSoonItems = useMemo(() => {
     const today = new Date();
     const result = [];
@@ -254,13 +255,13 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         const exp = b.expiryDate ? new Date(b.expiryDate) : null;
         if (!exp || isNaN(exp.getTime())) return;
         const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (days > 0 && days <= expSoonDays) {
+        if (days > 0 && days <= statusModal.window) {
           result.push({ medId: m.id, medName: m.name, batchNumber: b.batchNumber, expiryDate: b.expiryDate });
         }
       });
     });
     return result.slice(0, 10);
-  }, [medicines, expSoonDays]);
+  }, [medicines, statusModal.window]);
 
   const stockStatusCounts = useMemo(() => {
     const today = new Date();
@@ -276,7 +277,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         const d = b.expiryDate ? new Date(b.expiryDate) : null;
         if (!d || isNaN(d.getTime())) return false;
         const days = Math.ceil((d.getTime() - today.getTime()) / 86400000);
-        return days > 0 && days <= expSoonDays && Number(b.quantity || 0) > 0;
+        return days > 0 && days <= statusModal.window && Number(b.quantity || 0) > 0;
       });
       if (hasExpired) {
         expired += 1;
@@ -289,7 +290,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       }
     });
     return { expired, low, expSoon, normal };
-  }, [medicines, expSoonDays]);
+  }, [medicines, statusModal.window]);
 
   // New: navigation helpers to inventory + open modals
   const openAddStock = (medicineId) => {
@@ -709,11 +710,11 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           onClick={() => setStatusModal({ open: true, type: 'low' })}
         />
         <StatsCard
-          title={`Expiring Soon (${expSoonDays}d)`}
+          title="Expiring Soon"
           value={expiringSoonItems.length}
           icon={Calendar}
           color="bg-yellow-100 text-yellow-800 border-yellow-200"
-          onClick={() => setStatusModal({ open: true, type: 'soon' })}
+          onClick={() => setStatusModal({ open: true, type: 'soon', window: statusModal.window })}
         />
         <StatsCard
           title="Out of Stock"
@@ -730,7 +731,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         />
       </div>
 
-      {/* Action Required */}
+      {/* Action Required removed */}
+      {false && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="bg-card rounded-lg border p-4">
           <h3 className="text-lg font-semibold mb-3">Low Stock</h3>
@@ -795,6 +797,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
         </div>
       </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-card rounded-lg border p-4">
@@ -865,7 +868,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         </div>
       </div>
 
-      {/* Recent Activity */}
+      {/* Recent Activity removed */}
+      {false && (
       <div className="bg-card rounded-lg border p-4 mb-6">
         <h3 className="text-lg font-semibold mb-3">Recent Activity</h3>
         <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -880,18 +884,32 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           {recentLogs.length === 0 && <div className="text-sm text-muted-foreground">No recent activity.</div>}
         </div>
       </div>
+      )}
 
       {statusModal.open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-              <h2 className="text-xl font-semibold">
-                {statusModal.type === 'low' && 'Low Stock Items'}
-                {statusModal.type === 'soon' && 'Expiring Soon Batches'}
-                {statusModal.type === 'out' && 'Out of Stock Items'}
-              </h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-xl font-semibold">
+                  {statusModal.type === 'low' && 'Low Stock Items'}
+                  {statusModal.type === 'soon' && 'Expiring Soon Batches'}
+                  {statusModal.type === 'out' && 'Out of Stock Items'}
+                </h2>
+                {statusModal.type === 'soon' && (
+                  <select
+                    value={statusModal.window}
+                    onChange={(e) => setStatusModal(prev => ({ ...prev, window: parseInt(e.target.value) }))}
+                    className="text-sm border rounded px-2 py-1"
+                  >
+                    <option value={30}>30d</option>
+                    <option value={60}>60d</option>
+                    <option value={90}>90d</option>
+                  </select>
+                )}
+              </div>
               <button
-                onClick={() => setStatusModal({ open: false, type: null })}
+                onClick={() => setStatusModal({ open: false, type: null, window: 30 })}
                 className="p-2 hover:bg-gray-100 rounded-md"
                 aria-label="Close"
               >
@@ -934,7 +952,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
               {statusModal.type === 'soon' && (
                 <div className="space-y-2">
                   {expiringSoonItems.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No expiring batches in 30 days.</div>
+                    <div className="text-sm text-muted-foreground">No expiring batches in {statusModal.window} days.</div>
                   ) : (
                     <table className="w-full text-sm">
                       <thead>
@@ -995,19 +1013,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
         </div>
       )}
-      {/* Sales last 7 days */}
-      <div className="bg-card rounded-lg border p-4 mb-6">
-        <h3 className="text-lg font-semibold mb-3">Sales (Last 7 days)</h3>
-        <ChartContainer config={{ total: { label: 'Revenue', color: '#3b82f6' } }} className="aspect-[16/6]">
-          <LineChart data={last7DaysRevenueStrict}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} />
-            <YAxis fontSize={12} tickLine={false} axisLine={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Line type="monotone" dataKey="total" stroke="var(--color-total, #3b82f6)" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ChartContainer>
-      </div>
+      {/* Sales last 7 days removed */}
 
       {/* Analytics Overview (moved to Analytics page) */}
       {false && (
@@ -1533,32 +1539,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       </div>
       )}
 
-      {/* Category Overview */}
-      <div className="mt-8">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Category Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {categoryDetailedStats.map(cat => (
-            <div key={cat.name} className="bg-card rounded-lg border p-4 hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="font-semibold text-card-foreground truncate pr-2" title={cat.name}>{cat.name}</h3>
-                <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">{cat.itemCount} items</span>
-              </div>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Stock:</span>
-                  <span className="font-medium text-foreground">{cat.stock.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Value:</span>
-                  <span className="font-medium text-foreground">
-                    {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(cat.value)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Category Overview removed */}
 
       
       {/* Form Modal */}

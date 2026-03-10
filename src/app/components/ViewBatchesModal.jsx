@@ -126,20 +126,9 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
   const handleUpdateSubmit = (e) => {
     e.preventDefault();
     if (editingBatch) {
-      // Calculate total units for the updated batch
-      const boxes = Number(editFormData.boxesReceived || 0);
-      const blisters = Number(editFormData.blistersPerBox || 1);
-      const units = Number(editFormData.unitsPerBlister || 1);
-      const totalUnits = boxes * blisters * units;
-
-      const updatedBatch = {
-        ...editFormData,
-        quantity: totalUnits, // Update quantity to match new unit calculation
-        initialQuantity: totalUnits
-      };
-
-      onUpdateBatch(medicine.id, editingBatch.id, updatedBatch);
+      onUpdateBatch(medicine.id, editingBatch.id, editFormData);
       setEditingBatch(null);
+      try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
     }
   };
 
@@ -240,18 +229,6 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
                     onChange={handleEditChange}
                     className="w-full px-3 py-1.5 border rounded-md text-sm"
                     min="1"
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Purchase Price</label>
-                  <input
-                    type="number"
-                    name="purchasePrice"
-                    value={editFormData.purchasePrice}
-                    onChange={handleEditChange}
-                    className="w-full px-3 py-1.5 border rounded-md text-sm"
-                    min="0"
-                    step="0.01"
                   />
                 </div>
                 <div className="col-span-4 flex justify-end gap-2 mt-2">
@@ -367,133 +344,19 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
             </table>
           </div>
 
-          {/* Forecast Panel */}
-          <div className="mt-6 space-y-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-gray-900">Forecast</h3>
-              <span className="text-sm text-gray-600">
-                Based on last 30 days of sales
-              </span>
-            </div>
-
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg border p-4">
-                <p className="text-sm text-gray-600">Predicted 30-day demand</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {Math.round(forecast.predicted30)} {medicine.unit}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Estimated sales next 30 days
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border p-4">
-                <p className="text-sm text-gray-600">Days remaining</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {forecast.daysRemaining != null ? Math.max(0, forecast.daysRemaining) : 'N/A'}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Before stock-out
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border p-4">
-                <p className="text-sm text-gray-600">Estimated stock-out</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {forecast.stockoutDate ? new Date(forecast.stockoutDate).toLocaleDateString() : 'N/A'}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Assuming constant demand
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border p-4">
-                <p className="text-sm text-gray-600">Reorder recommendation</p>
-                <p className={`text-2xl font-bold ${forecast.reorderAlert ? 'text-red-600' : 'text-green-600'}`}>
-                  {forecast.reorderAlert ? 'Reorder Now' : 'Stock OK'}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Reorder point: {Math.round(forecast.reorderPoint)} {medicine.unit}
-                </p>
-              </div>
-            </div>
-
-            {/* Sales Trend Line Chart */}
-            <div className="bg-white rounded-lg border p-4">
-              <h4 className="text-sm font-semibold text-gray-800 mb-3">Sales Trend (Last 30 days)</h4>
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer>
-                  <LineChart data={salesSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Forecast Chart: past actual vs next 30 predicted */}
-            <div className="bg-white rounded-lg border p-4">
-              <h4 className="text-sm font-semibold text-gray-800 mb-3">Forecast (Next 30 days)</h4>
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer>
-                  <LineChart
-                    data={[
-                      ...salesSeries.map(d => ({ label: d.label, actual: d.units, predicted: null })),
-                      ...Array.from({ length: 30 }).map((_, i) => {
-                        const future = new Date();
-                        future.setDate(future.getDate() + i + 1);
-                        return {
-                          label: formatDateLabel(future),
-                          actual: null,
-                          predicted: forecast.dailyUsage,
-                        };
-                      }),
-                    ]}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="actual" stroke="#374151" name="Actual" dot={false} />
-                    <Line type="monotone" dataKey="predicted" stroke="#10B981" name="Predicted/day" strokeDasharray="5 5" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Stock vs Reorder Bar Chart */}
-            <div className="bg-white rounded-lg border p-4">
-              <h4 className="text-sm font-semibold text-gray-800 mb-3">Stock vs Reorder</h4>
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer>
-                  <BarChart
-                    data={[
-                      { name: 'Current Stock', value: Number(medicine.totalQuantity || 0), color: '#22c55e' },
-                      { name: 'Reorder Point', value: Math.round(forecast.reorderPoint), color: '#f59e0b' },
-                      { name: 'Predicted 30-day', value: Math.round(forecast.predicted30), color: '#ef4444' },
-                    ]}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="value">
-                      <Cell fill="#22c55e" />
-                      <Cell fill="#f59e0b" />
-                      <Cell fill="#ef4444" />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="text-xs text-gray-600 mt-2">
-                <span className="inline-block w-3 h-3 rounded-sm mr-2" style={{ backgroundColor: '#22c55e' }}></span>Safe
-                <span className="inline-block w-3 h-3 rounded-sm mx-2" style={{ backgroundColor: '#f59e0b' }}></span>Near reorder
-                <span className="inline-block w-3 h-3 rounded-sm mx-2" style={{ backgroundColor: '#ef4444' }}></span>Stock-out soon
-              </div>
+          {/* Sales Trend (Last 30 days) */}
+          <div className="mt-6 bg-white rounded-lg border p-4">
+            <h4 className="text-sm font-semibold text-gray-800 mb-3">Sales Trend (Last 30 days)</h4>
+            <div style={{ width: '100%', height: 240 }}>
+              <ResponsiveContainer>
+                <LineChart data={salesSeries}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" fontSize={10} />
+                  <YAxis fontSize={10} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={false} strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>

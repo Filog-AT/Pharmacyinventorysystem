@@ -157,6 +157,7 @@ export const medicineService = {
   // Update a batch in a medicine
   async updateBatch(medicineId: string, batchId: string, batchData: Partial<Batch>): Promise<void> {
     try {
+      console.log(`[medicineService] Updating batch ${batchId} for medicine ${medicineId}`, batchData);
       const medicineRef = doc(db, MEDICINES_COLLECTION, medicineId);
       const querySnapshot = await getDocs(query(collection(db, MEDICINES_COLLECTION)));
       const medicines = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Medicine));
@@ -164,17 +165,25 @@ export const medicineService = {
 
       if (medicine) {
         const updatedBatches = (medicine.batches || []).map(b => {
-          if (b.id === batchId) {
+          if (b.id === batchId || (b as any).batchId === batchId) {
             const updated = { ...b, ...batchData };
-            // Re-calculate quantity if boxes/blisters/units changed
-            if (batchData.boxesReceived !== undefined || batchData.blistersPerBox !== undefined || batchData.unitsPerBlister !== undefined) {
-              const boxes = Number(updated.boxesReceived || 0);
-              const blisters = Number(updated.blistersPerBox || 1);
-              const units = Number(updated.unitsPerBlister || 1);
-              const newTotal = boxes * blisters * units;
-              // If initialQuantity is changed, we assume it's a correction
+            
+            // Re-calculate quantity ONLY if boxes/blisters/units changed in the update payload
+            // AND the new calculation differs from the old initialQuantity
+            const oldInitial = Number(b.initialQuantity || 0);
+            const newBoxes = Number(batchData.boxesReceived ?? b.boxesReceived ?? 0);
+            const newBlisters = Number(batchData.blistersPerBox ?? b.blistersPerBox ?? 1);
+            const newUnits = Number(batchData.unitsPerBlister ?? b.unitsPerBlister ?? 1);
+            const newTotal = newBoxes * newBlisters * newUnits;
+
+            if (newTotal !== oldInitial && (batchData.boxesReceived !== undefined || batchData.blistersPerBox !== undefined || batchData.unitsPerBlister !== undefined)) {
+              console.log(`[medicineService] Batch units changed. Resetting quantity to ${newTotal}`);
               updated.initialQuantity = newTotal;
-              updated.quantity = newTotal; // Warning: this resets remaining stock. Usually okay for "Edit".
+              updated.quantity = newTotal;
+            } else {
+              // Preserve current quantity if units didn't change
+              updated.quantity = b.quantity;
+              updated.initialQuantity = b.initialQuantity;
             }
             return updated;
           }

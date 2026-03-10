@@ -169,7 +169,7 @@ export function StaffDashboard({ medicines = [] }) {
       </div>
 
       <div className="mb-6">
-        <SalesByMedicineStats receipts={receipts} />
+        <SalesByMedicineStats receipts={receipts} onlyDaily />
       </div>
 
       <div className="bg-card rounded-lg border p-4 mb-6">
