@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { TrendingUp } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Tooltip as RTooltip } from 'recharts';
 import { SalesByMedicineStats } from '@/app/components/SalesByMedicineStats';
@@ -308,55 +309,6 @@ export function Analytics({ medicines = [], categories = [] }) {
         <p className="text-sm text-muted-foreground">Reporting and data analysis</p>
       </div>
 
-      {/* Filters */}
-      <div className="bg-card rounded-lg border p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div>
-          <label className="block text-sm font-medium mb-1">Start Date</label>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 border rounded-md" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">End Date</label>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full px-3 py-2 border rounded-md" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Category</label>
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="w-full px-3 py-2 border rounded-md">
-            <option value="All">All</option>
-            {Array.from(new Set((categories || []).filter(Boolean))).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Medicine</label>
-          <select value={filterMedicine} onChange={e => setFilterMedicine(e.target.value)} className="w-full px-3 py-2 border rounded-md">
-            <option value="">All</option>
-            {medicines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Inventory Availability Summary */}
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Inventory Availability Summary</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg border p-4">
-            <p className="text-sm text-gray-600">Total Medicines</p>
-            <p className="text-2xl font-bold text-gray-900">{availabilityCards.uniqueSKU}</p>
-          </div>
-          <div className="bg-white rounded-lg border p-4">
-            <p className="text-sm text-gray-600">Total Units in Stock</p>
-            <p className="text-2xl font-bold text-gray-900">{availabilityCards.totalUnits}</p>
-          </div>
-          <div className="bg-white rounded-lg border p-4">
-            <p className="text-sm text-gray-600">Low Stock Count</p>
-            <p className="text-2xl font-bold text-gray-900">{availabilityCards.lowStock}</p>
-          </div>
-          <div className="bg-white rounded-lg border p-4">
-            <p className="text-sm text-gray-600">Expired Stock Count</p>
-            <p className="text-2xl font-bold text-gray-900">{availabilityCards.expired}</p>
-          </div>
-        </div>
-      </section>
-
       {/* Usage & Sales Summary */}
       <section className="space-y-4">
         <h2 className="text-xl font-semibold">Usage & Sales Summary</h2>
@@ -392,8 +344,41 @@ export function Analytics({ medicines = [], categories = [] }) {
             </ChartContainer>
           </div>
         </div>
-        <div className="mt-6">
-          <SalesByMedicineStats receipts={receipts} medicines={medicines} />
+      </section>
+
+      {/* Medicine Sales Trend (Last 30 days) */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Medicine Sales</h2>
+          <select
+            value={selectedMedicineId}
+            onChange={(e) => setSelectedMedicineId(e.target.value)}
+            className="px-3 py-1.5 border rounded-md text-sm bg-white"
+          >
+            {medicines.map(m => (
+              <option key={m.id} value={m.id}>{m.name} ({m.strength})</option>
+            ))}
+          </select>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div style={{ width: '100%', height: 300 }}>
+            {selectedSeries.length > 0 && selectedSeries.some(d => d.units > 0) ? (
+              <ResponsiveContainer>
+                <LineChart data={selectedSeries}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" fontSize={10} />
+                  <YAxis fontSize={10} />
+                  <RTooltip />
+                  <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={true} strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-2">
+                <TrendingUp className="w-8 h-8 opacity-20" />
+                <p className="text-sm italic">No sales recorded for this medicine in the last 30 days.</p>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -414,8 +399,8 @@ export function Analytics({ medicines = [], categories = [] }) {
                 <YAxis
                   type="category"
                   dataKey="name"
-                  width={110}
-                  tick={{ fontSize: 12, fontWeight: 600, fill: '#374151' }}
+                  width={130}
+                  tick={{ fontSize: 13, fontWeight: 700, fill: '#1f2937' }}
                   interval={0}
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />

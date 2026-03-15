@@ -8,7 +8,23 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
     return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   };
  
-  const recommendations = [];
+  const medRecommendations = new Map();
+
+  const addAction = (m, action) => {
+    if (!medRecommendations.has(m.id)) {
+      medRecommendations.set(m.id, {
+        id: m.id,
+        product: m.name,
+        stock: `${m.totalQuantity || 0} ${m.unit || ''}`.trim(),
+        actions: []
+      });
+    }
+    const entry = medRecommendations.get(m.id);
+    if (!entry.actions.includes(action)) {
+      entry.actions.push(action);
+    }
+  };
+
   for (const m of medicines) {
     const qty = m.totalQuantity || 0;
     const min = m.minStockLevel || 0;
@@ -26,167 +42,75 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
     const daysToExpiry = earliestExpiry ? daysBetween(earliestExpiry) : Infinity;
     const supplier = m.batches?.[0]?.supplier || '';
     const price = Number(m.price || 0);
-    const hasMultipleBatches = Array.isArray(m.batches) && m.batches.length > 1;
 
     if (qty <= 0) {
-      recommendations.push({
-        id: m.id,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Stock In +${Math.max(50, min || 50)} (Reorder urgently)`,
-      });
+      addAction(m, `Stock In +${Math.max(50, min || 50)} (Reorder urgently)`);
       continue;
     }
 
     if (qty <= min) {
-      recommendations.push({
-        id: `${m.id}-reorder-now`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Reorder immediately — stock below reorder point`,
-      });
+      addAction(m, `Reorder immediately — stock below reorder point`);
       if (qty <= Math.ceil(reorderPoint / 3)) {
-        recommendations.push({
-          id: `${m.id}-emergency`,
-          product: m.name,
-          stock: `${qty} ${m.unit || ''}`.trim(),
-          action: `Order emergency quantity — stock may run out in 2–3 days`,
-        });
+        addAction(m, `Order emergency quantity — stock may run out in 2–3 days`);
       }
       const recommended = Math.ceil((min - qty) + Math.max(10, Math.round(min * 0.25)));
-      recommendations.push({
-        id: m.id,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Reorder +${recommended}`,
-      });
+      addAction(m, `Reorder +${recommended}`);
       if (min < 20) {
-        recommendations.push({
-          id: `${m.id}-min`,
-          product: m.name,
-          stock: `${qty} ${m.unit || ''}`.trim(),
-          action: `Increase min stock level to ${Math.max(20, Math.ceil(min * 1.5))}`,
-        });
+        addAction(m, `Increase min stock level to ${Math.max(20, Math.ceil(min * 1.5))}`);
       }
-      recommendations.push({
-        id: `${m.id}-increase-reorder`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Increase reorder quantity — fast-moving medicine`,
-      });
+      addAction(m, `Increase reorder quantity — fast-moving medicine`);
       if (supplier) {
-        recommendations.push({
-          id: `${m.id}-order`,
-          product: m.name,
-          stock: `${qty} ${m.unit || ''}`.trim(),
-          action: `Create order with ${supplier}`,
-        });
+        addAction(m, `Create order with ${supplier}`);
       }
     }
 
-    // FEFO recommendation intentionally removed per requirements
     if (daysToExpiry <= 30 && daysToExpiry > 0) {
-      recommendations.push({
-        id: `${m.id}-discount`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Apply discount — expiring within 30 days`,
-      });
-      recommendations.push({
-        id: `${m.id}-bundle`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Bundle with another product — move near-expiry stock`,
-      });
-      recommendations.push({
-        id: m.id,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Return to distributor/manufacturer (expires in ${daysToExpiry}d)`,
-      });
+      addAction(m, `Apply discount — expiring within 30 days`);
+      addAction(m, `Bundle with another product — move near-expiry stock`);
+      addAction(m, `Return to distributor/manufacturer (expires in ${daysToExpiry}d)`);
       if (supplier) {
-        recommendations.push({
-          id: `${m.id}-return-policy`,
-          product: m.name,
-          stock: `${qty} ${m.unit || ''}`.trim(),
-          action: `Check return policy with ${supplier}`,
-        });
+        addAction(m, `Check return policy with ${supplier}`);
       }
     }
 
     if (daysToExpiry <= 0) {
-      recommendations.push({
-        id: m.id,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Remove from shelf (expired)`,
-      });
+      addAction(m, `Remove from shelf (expired)`);
       continue;
     }
  
     if (qty > (min || 1) * 6) {
-      recommendations.push({
-        id: `${m.id}-reduce-next-po`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Reduce next purchase order — current stock exceeds demand`,
-      });
+      addAction(m, `Reduce next purchase order — current stock exceeds demand`);
     }
     if (qty > (min || 1) * 9) {
-      recommendations.push({
-        id: `${m.id}-stop-reorder`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Temporarily stop reordering — stock sufficient for 2–3 months`,
-      });
+      addAction(m, `Temporarily stop reordering — stock sufficient for 2–3 months`);
     }
     if (qty > (min || 1) * 3) {
-      recommendations.push({
-        id: m.id,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Promote high inventory item — slow-moving stock`,
-      });
+      addAction(m, `Promote high inventory item — slow-moving stock`);
       if (price >= 500) {
-        recommendations.push({
-          id: `${m.id}-price-review`,
-          product: m.name,
-          stock: `${qty} ${m.unit || ''}`.trim(),
-          action: `Review pricing; consider small discount to improve turnover`,
-        });
+        addAction(m, `Review pricing; consider small discount to improve turnover`);
       }
     }
 
     if (qty > min && qty <= Math.ceil(min * 1.2)) {
-      recommendations.push({
-        id: `${m.id}-prepare-stock`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Prepare additional stock — demand increasing recently`,
-      });
+      addAction(m, `Prepare additional stock — demand increasing recently`);
     } else if (qty > Math.ceil(min * 1.5) && qty <= Math.ceil(min * 3)) {
-      recommendations.push({
-        id: `${m.id}-maintain-reorder`,
-        product: m.name,
-        stock: `${qty} ${m.unit || ''}`.trim(),
-        action: `Maintain current reorder level — usage stable`,
-      });
+      addAction(m, `Maintain current reorder level — usage stable`);
     }
 
     if (qty <= min) {
       const alternatives = medicines.filter(x => x.id !== m.id && (x.category || '') === (m.category || '') && Number(x.totalQuantity || 0) > Math.max(1, Number(x.minStockLevel || 0)) * 2);
       if (alternatives.length > 0) {
         const alt = alternatives[0];
-        recommendations.push({
-          id: `${m.id}-alternative`,
-          product: m.name,
-          stock: `${qty} ${m.unit || ''}`.trim(),
-          action: `Suggest alternative medicine — ${alt.name} available`,
-        });
+        addAction(m, `Suggest alternative medicine — ${alt.name} available`);
       }
     }
   }
  
+  const recommendations = Array.from(medRecommendations.values()).map(r => ({
+    ...r,
+    action: r.actions.join(' • ')
+  }));
+
   const top = recommendations.slice(0, 8);
  
   return (

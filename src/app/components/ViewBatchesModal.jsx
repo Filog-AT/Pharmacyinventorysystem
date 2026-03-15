@@ -26,6 +26,14 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
 
   if (!medicine) return null;
 
+  useEffect(() => {
+    // Prevent background scrolling when modal is open
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   const today = new Date();
   const formatDateLabel = (d) => {
     const dt = new Date(d);
@@ -123,12 +131,16 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
     });
   };
 
-  const handleUpdateSubmit = (e) => {
+  const handleUpdateSubmit = async (e) => {
     e.preventDefault();
     if (editingBatch) {
-      onUpdateBatch(medicine.id, editingBatch.id, editFormData);
-      setEditingBatch(null);
-      try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
+      try {
+        await onUpdateBatch(medicine.id, editingBatch.id, editFormData);
+        setEditingBatch(null);
+        try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 
@@ -141,8 +153,14 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] flex flex-col">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] flex flex-col relative overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
           <div>
             <h2 className="text-xl font-bold text-gray-800">{medicine.name}</h2>
@@ -344,21 +362,23 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
             </table>
           </div>
 
-          {/* Sales Trend (Last 30 days) */}
-          <div className="mt-6 bg-white rounded-lg border p-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Sales Trend (Last 30 days)</h4>
-            <div style={{ width: '100%', height: 240 }}>
-              <ResponsiveContainer>
-                <LineChart data={salesSeries}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" fontSize={10} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={false} strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
+          {/* Sales Trend (Last 30 days) - Manager/Admin Only */}
+          {currentUser?.role !== 'staff' && (
+            <div className="mt-6 bg-white rounded-lg border p-4">
+              <h4 className="text-sm font-semibold text-gray-800 mb-3">Sales Trend (Last 30 days)</h4>
+              <div style={{ width: '100%', height: 240 }}>
+                <ResponsiveContainer>
+                  <LineChart data={salesSeries}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="label" fontSize={10} />
+                    <YAxis fontSize={10} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={false} strokeWidth={2} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, Package, AlertTriangle, Calendar, TrendingUp, XCircle, Bell } from 'lucide-react';
+import { Plus, Search, Package, AlertTriangle, Calendar, TrendingUp, XCircle, Bell, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { MedicineCard } from '@/app/components/MedicineCard';
 import { MedicineForm } from '@/app/components/MedicineForm';
@@ -16,7 +16,9 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   const [showForm, setShowForm] = useState(false);
   const [editingMedicine, setEditingMedicine] = useState(undefined);
   const [receipts, setReceipts] = useState([]);
-  const [statusModal, setStatusModal] = useState({ open: false, type: null, window: 30 }); // 'low' | 'soon' | 'expired'
+  const [statusModal, setStatusModal] = useState({ open: false, type: null, window: 30 }); // 'low' | 'soon' | 'out' | 'total'
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [analyticsTimeScale, setAnalyticsTimeScale] = useState('day');
   const [analyticsStartDate, setAnalyticsStartDate] = useState('');
   const [analyticsEndDate, setAnalyticsEndDate] = useState('');
@@ -68,6 +70,17 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       return matchesSearch && matchesCategory;
     });
   }, [medicines, searchTerm, filterCategory]);
+
+  useEffect(() => {
+    if (statusModal.open || showForm) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [statusModal.open, showForm]);
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -245,6 +258,13 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   const outOfStockMeds = useMemo(() => {
     return medicines.filter(m => Number(m.totalQuantity || 0) <= 0);
   }, [medicines]);
+
+  const top10MedicinesByStock = useMemo(() => {
+    return [...medicines]
+      .sort((a, b) => (b.totalQuantity || 0) - (a.totalQuantity || 0))
+      .slice(0, 10);
+  }, [medicines]);
+
   const [expSoonDays, setExpSoonDays] = useState(30);
   // Removed expSoonDays from here
   const expiringSoonItems = useMemo(() => {
@@ -483,6 +503,59 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
     });
   }, [medicines, analyticsFilterCategory, analyticsFilterMedicine]);
 
+  const notifications = useMemo(() => {
+    const list = [];
+    const today = new Date();
+    const readRaw = localStorage.getItem('pharmacy_read_notifications');
+    const readSet = new Set(readRaw ? JSON.parse(readRaw) : []);
+
+    // Thresholds for logs and receipts
+    const LOG_THRESHOLD = 500;
+    const RECEIPT_THRESHOLD = 500;
+
+    if (recentLogs.length >= LOG_THRESHOLD) {
+      list.push({
+        id: 'system-logs-threshold',
+        type: 'info',
+        title: 'System Cleanup',
+        message: `Activity logs have reached ${recentLogs.length} entries. Consider clearing history to maintain performance.`,
+        time: 'System'
+      });
+    }
+
+    if (receipts.length >= RECEIPT_THRESHOLD) {
+      list.push({
+        id: 'system-receipts-threshold',
+        type: 'info',
+        title: 'System Cleanup',
+        message: `Receipt history has reached ${receipts.length} entries. Consider archiving or clearing old records.`,
+        time: 'System'
+      });
+    }
+
+    medicines.forEach(med => {
+      const qty = Number(med.totalQuantity || 0);
+      const lowStockThreshold = med.minStockLevel || 50;
+      if (qty <= lowStockThreshold) {
+        list.push({ id: `low-${med.id}`, type: 'warning', title: 'Low Stock', message: `${med.name} is low (${qty})`, time: 'Recent' });
+      }
+      (med.batches || []).forEach((b) => {
+        if (!b.expiryDate) return;
+        const exp = new Date(b.expiryDate);
+        const days = Math.ceil((exp.getTime() - today.getTime()) / 86400000);
+        if (days < 0) {
+          list.push({ id: `expired-${med.id}-${b.id}`, type: 'error', title: 'Expired', message: `${med.name} (Batch ${b.batchNumber}) expired`, time: 'Alert' });
+        } else if (days <= 90) {
+          list.push({ id: `expiring-${med.id}-${b.id}`, type: 'warning', title: 'Expiring Soon', message: `${med.name} expires in ${days}d`, time: 'Alert' });
+        }
+      });
+    });
+
+    return list.map(n => ({ ...n, read: readSet.has(n.id) }));
+  }, [medicines]);
+
+  const unreadNotifsCount = notifications.filter(n => !n.read).length;
+
   const stockPerMedicineAnalytics = useMemo(() => {
     return analyticsMedicines
       .map(m => ({
@@ -631,16 +704,29 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   }, [medicines, receiptsByDateRange, analyticsFilterCategory, analyticsFilterMedicine]);
 
   const handleAddMedicine = async (medicineData) => {
-    onAddMedicine(medicineData);
-    setShowForm(false);
+    setSubmitting(true);
+    try {
+      await onAddMedicine(medicineData);
+      setShowForm(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleUpdateMedicine = async (medicineData) => {
     if (editingMedicine) {
-      onUpdateMedicine(editingMedicine.id, medicineData);
-      setEditingMedicine(undefined);
-      setShowForm(false);
-      
+      setSubmitting(true);
+      try {
+        await onUpdateMedicine(editingMedicine.id, medicineData);
+        setEditingMedicine(undefined);
+        setShowForm(false);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -655,27 +741,88 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   };
 
   return (
-    <div>
+    <div className="relative">
+      {/* Submitting Overlay */}
+      {submitting && (
+        <div className="fixed inset-0 bg-white/70 backdrop-blur-[1px] z-[100] flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-900 font-bold">Processing...</p>
+        </div>
+      )}
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
           <p className="text-gray-600">Overview of your pharmacy inventory</p>
         </div>
-        <div className="hidden md:flex items-center">
+        <div className="hidden md:flex items-center relative gap-4">
           <button
-            onClick={() => onNavigateToTab?.('notifications')}
-            className="inline-flex items-center justify-center bg-blue-600 text-white w-11 h-11 rounded-md hover:bg-blue-700 relative"
+            onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+            className="inline-flex items-center justify-center bg-blue-600 text-white w-11 h-11 rounded-md hover:bg-blue-700 relative z-50"
             aria-label="Open notifications"
             title="Notifications"
           >
             <Bell className="w-6 h-6" />
-            {(stats.lowStock + stats.expiringSoon + stats.expired) > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-                {Math.min(99, stats.lowStock + stats.expiringSoon + stats.expired)}
+            {unreadNotifsCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full border-2 border-white">
+                {Math.min(99, unreadNotifsCount)}
               </span>
             )}
           </button>
+
+          {notifDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setNotifDropdownOpen(false)}></div>
+              <div className="absolute top-full right-0 mt-2 w-80 bg-white border rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
+                <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
+                  <h3 className="font-bold text-gray-900">Notifications</h3>
+                  <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">{unreadNotifsCount} Unread</span>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500">
+                      <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                      <p className="text-sm">All caught up!</p>
+                    </div>
+                  ) : (
+                    notifications.slice(0, 5).map(n => (
+                      <div
+                        key={n.id}
+                        className={`p-4 border-b last:border-0 hover:bg-gray-50 cursor-pointer transition-colors ${!n.read ? 'bg-blue-50/30' : ''}`}
+                        onClick={() => {
+                          setNotifDropdownOpen(false);
+                          onNavigateToTab?.('notifications');
+                        }}
+                      >
+                        <div className="flex gap-3">
+                          <div className={`mt-1 p-1.5 rounded-md ${
+                            n.type === 'error' ? 'bg-red-100 text-red-600' : 
+                            n.type === 'warning' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
+                          }`}>
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1">
+                            <p className={`text-sm font-semibold ${!n.read ? 'text-gray-900' : 'text-gray-500'}`}>{n.title}</p>
+                            <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{n.message}</p>
+                            <p className="text-[10px] text-gray-400 mt-1">{n.time}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setNotifDropdownOpen(false);
+                    onNavigateToTab?.('notifications');
+                  }}
+                  className="w-full p-3 text-sm font-bold text-blue-600 hover:bg-gray-50 bg-gray-50 border-t transition-colors"
+                >
+                  Show all notifications
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
       
@@ -700,7 +847,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           value={stats.totalMedicines}
           icon={Package}
           color="bg-blue-100 text-blue-800 border-blue-200"
-          onClick={() => onNavigateToTab?.('inventory')}
+          onClick={() => setStatusModal({ open: true, type: 'total' })}
         />
         <StatsCard
           title="Low Stock Items"
@@ -887,14 +1034,21 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       )}
 
       {statusModal.open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setStatusModal({ open: false, type: null, window: 30 })}
+        >
+          <div 
+            className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <h2 className="text-xl font-semibold">
                   {statusModal.type === 'low' && 'Low Stock Items'}
                   {statusModal.type === 'soon' && 'Expiring Soon Batches'}
                   {statusModal.type === 'out' && 'Out of Stock Items'}
+                  {statusModal.type === 'total' && 'Top Stocked Medicines'}
                 </h2>
                 {statusModal.type === 'soon' && (
                   <select
@@ -1007,6 +1161,51 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       </tbody>
                     </table>
                   )}
+                </div>
+              )}
+              {statusModal.type === 'total' && (
+                <div className="space-y-4">
+                  <div className="text-sm text-gray-500 mb-2 italic">Showing top 10 medicines by stock quantity.</div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-muted-foreground border-b">
+                        <th className="text-left p-2">Medicine</th>
+                        <th className="text-right p-2">Quantity</th>
+                        <th className="text-right p-2">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {top10MedicinesByStock.map((m) => (
+                        <tr key={m.id} className="border-t">
+                          <td className="p-2">
+                            <div className="font-medium text-gray-900">{m.name}</div>
+                            <div className="text-xs text-gray-500">{m.strength} • {m.dosageForm}</div>
+                          </td>
+                          <td className="p-2 text-right font-bold text-gray-900">{m.totalQuantity || 0}</td>
+                          <td className="p-2 text-right">
+                            <button 
+                              onClick={() => {
+                                setStatusModal({ open: false, type: null, window: 30 });
+                                openViewBatches(m.id);
+                              }} 
+                              className="text-blue-600 hover:underline font-medium"
+                            >
+                              View Batches
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <button
+                    onClick={() => {
+                      setStatusModal({ open: false, type: null, window: 30 });
+                      onNavigateToTab?.('inventory');
+                    }}
+                    className="w-full py-3 mt-4 text-center text-blue-600 font-bold hover:bg-blue-50 border border-blue-100 rounded-lg transition-colors"
+                  >
+                    Show all medicine in inventory
+                  </button>
                 </div>
               )}
             </div>

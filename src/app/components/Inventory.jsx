@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
 import { toast } from 'sonner';
-import { Search, Package, Plus, Pencil, Trash2, X, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Package, Plus, Pencil, Trash2, X, Eye, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react';
 import { MedicineForm } from './MedicineForm';
 import { ViewBatchesModal } from './ViewBatchesModal';
 import { AddStockForm } from './AddStockForm';
+import { DeleteWarningModal } from './DeleteWarningModal';
 
 export function Inventory({
   medicines = [],
@@ -29,6 +30,10 @@ export function Inventory({
   const [viewingMedicine, setViewingMedicine] = useState(null);
   const [showAddStockForm, setShowAddStockForm] = useState(false);
   const [preselectedMedicineId, setPreselectedMedicineId] = useState(null);
+  const safeMedicines = Array.isArray(medicines) ? medicines : [];
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const isStaff = (currentUser?.role === 'staff');
+
   useEffect(() => {
     const handler = (e) => {
       const { medicineId } = e.detail || {};
@@ -50,12 +55,21 @@ export function Inventory({
       window.removeEventListener('open-add-stock', handler);
       window.removeEventListener('open-view-batches', viewBatchesHandler);
     };
-  }, []);
+  }, [safeMedicines]);
+
+  // Keep viewingMedicine in sync with latest data from medicines prop
+  useEffect(() => {
+    if (viewingMedicine) {
+      const updated = safeMedicines.find(m => m.id === viewingMedicine.id);
+      if (updated && updated !== viewingMedicine) {
+        setViewingMedicine(updated);
+      }
+    }
+  }, [safeMedicines, viewingMedicine?.id]);
   const [expandedRows, setExpandedRows] = useState(new Set());
 
-  const safeMedicines = Array.isArray(medicines) ? medicines : [];
-  const safeCategories = Array.isArray(categories) ? categories : [];
-  const isStaff = (currentUser?.role === 'staff');
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
+  const [submitting, setSubmitting] = useState(false);
 
   const getStockStatus = (totalQuantity, minStockLevel) => {
     if (totalQuantity <= 0) return { label: 'Out of Stock', color: 'bg-rose-100 text-rose-700 border-rose-200 shadow-sm ring-1 ring-rose-400/20' };
@@ -84,22 +98,23 @@ export function Inventory({
     const groups = new Map();
     const list = filteredMedicines;
     list.forEach(m => {
-      const key = `${(m.name || '').toLowerCase()}|${(m.dosageForm || '').toLowerCase()}|${(m.strength || '').toLowerCase()}|${Number(m.price || 0)}`;
-      const existing = groups.get(key);
-      const totalQty = Number(m.totalQuantity || 0);
-      if (existing) {
-        existing.totalQuantity += totalQty;
-        existing.batches = [...(existing.batches || []), ...(m.batches || [])];
-        existing.ids.push(m.id);
-      } else {
-        groups.set(key, {
-          ...m,
-          totalQuantity: totalQty,
-          ids: [m.id],
-          batches: [...(m.batches || [])],
-          groupKey: key,
-          id: m.id,
+      const nameKey = (m.name || '').trim().toLowerCase();
+      if (!groups.has(nameKey)) {
+        groups.set(nameKey, {
+          name: m.name,
+          category: m.category,
+          variations: [],
+          totalQuantity: 0,
+          id: nameKey,
+          minStockLevel: m.minStockLevel || 50
         });
+      }
+      const group = groups.get(nameKey);
+      group.variations.push(m);
+      group.totalQuantity += Number(m.totalQuantity || 0);
+      // If any variation is low stock, the group should show low stock status
+      if (m.minStockLevel && m.minStockLevel > group.minStockLevel) {
+        group.minStockLevel = m.minStockLevel;
       }
     });
     return Array.from(groups.values());
@@ -147,7 +162,7 @@ export function Inventory({
     return Array.from(stats.entries()).map(([name, data]) => ({ name, ...data }));
   }, [safeMedicines, safeCategories]);
 
-  const handleAddCategory = (e) => {
+  const handleAddCategory = async (e) => {
     e.preventDefault();
     const value = newCategory.trim();
     if (!value) return;
@@ -156,9 +171,21 @@ export function Inventory({
       toast.warning(`Category "${value}" already exists`);
       return;
     }
-    onAddCategory?.(value);
-    setNewCategory('');
-    setShowAddCategoryForm(false);
+    setSubmitting(true);
+    try {
+      await onAddCategory?.(value);
+      setNewCategory('');
+      setShowAddCategoryForm(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAddVariationClick = (groupName) => {
+    setEditingMedicine({ name: groupName, isVariation: true });
+    setShowMedicineForm(true);
   };
 
   const handleAddProductClick = () => {
@@ -175,22 +202,57 @@ export function Inventory({
     setViewingMedicine(medicine);
   };
 
-  const handleSubmitMedicine = (data) => {
-    if (editingMedicine) {
-      onUpdateMedicine?.(editingMedicine.id, data);
-    } else {
-      onAddMedicine?.(data);
+  const handleSubmitMedicine = async (data) => {
+    setSubmitting(true);
+    try {
+      if (editingMedicine && editingMedicine.id) {
+        await onUpdateMedicine?.(editingMedicine.id, data);
+      } else {
+        await onAddMedicine?.(data);
+      }
+      setShowMedicineForm(false);
+      setEditingMedicine(undefined);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
     }
-    setShowMedicineForm(false);
-    setEditingMedicine(undefined);
   };
 
-  const handleSubmitStock = (medicineId, batchData) => {
-    onAddBatch?.(medicineId, batchData);
-    setShowAddStockForm(false);
+  const handleUpdateBatchLocal = async (medId, batchId, data) => {
+    setSubmitting(true);
+    try {
+      await onUpdateBatch?.(medId, batchId, data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleUpdateBatch = (medicineId, batchId, batchData) => {
+  const handleDeleteBatchLocal = async (medId, batchId) => {
+    setSubmitting(true);
+    try {
+      await onDeleteBatch?.(medId, batchId);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitStock = async (medicineId, batchData) => {
+    setSubmitting(true);
+    try {
+      await onAddBatch?.(medicineId, batchData);
+      setShowAddStockForm(false);
+      setPreselectedMedicineId(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  }; const handleUpdateBatch = (medicineId, batchId, batchData) => {
     onUpdateBatch?.(medicineId, batchId, batchData);
   };
 
@@ -199,7 +261,14 @@ export function Inventory({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Submitting Overlay */}
+      {submitting && (
+        <div className="fixed inset-0 bg-white/70 backdrop-blur-[1px] z-[100] flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-900 font-bold">Processing...</p>
+        </div>
+      )}
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Inventory Management</h1>
@@ -279,6 +348,7 @@ export function Inventory({
                         toast.error('Cannot delete category with medicines');
                         return;
                       }
+                      // Use custom modal or just simple confirm for categories
                       if (confirm(`Delete category "${cat.name}"?`)) {
                         onDeleteCategory?.(cat.name);
                       }
@@ -337,45 +407,41 @@ export function Inventory({
                 <tr className="bg-gray-50 text-gray-600 border-b">
                   <th className="w-10 p-4"></th>
                   <th className="text-left p-4 font-semibold">Medicine Name</th>
-                  <th className="text-left p-4 font-semibold">Dosage Form</th>
-                  <th className="text-left p-4 font-semibold">Strength</th>
-                  <th className="text-left p-4 font-semibold">Strength Unit</th>
+                  <th className="text-left p-4 font-semibold">Category</th>
+                  <th className="text-right p-4 font-semibold">Total Variations</th>
                   <th className="text-right p-4 font-semibold">Total Stock</th>
                   <th className="text-center p-4 font-semibold">Status</th>
-                  <th className="text-right p-4 font-semibold">Actions</th>
+                  {!isStaff && <th className="text-right p-4 font-semibold">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filteredMedicines.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-8 text-center text-gray-500">
+                    <td colSpan={isStaff ? 6 : 7} className="p-8 text-center text-gray-500">
                       No medicines found. Try adding some or adjusting your search.
                     </td>
                   </tr>
                 ) : (
-                  groupedMedicines.map((m) => {
-                    const status = getStockStatus(m.totalQuantity, m.minStockLevel);
-                    const isExpanded = expandedRows.has(m.id);
+                  groupedMedicines.map((group) => {
+                    const status = getStockStatus(group.totalQuantity, group.minStockLevel);
+                    const isExpanded = expandedRows.has(group.id);
                     return (
-                      <Fragment key={m.id}>
-                        <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => toggleRow(m.id)}>
+                      <Fragment key={group.id}>
+                        <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => toggleRow(group.id)}>
                           <td className="p-4">
                             {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                           </td>
                           <td className="p-4">
-                            <div className="font-bold text-gray-900">{m.name}</div>
-                            <div className="text-xs text-muted-foreground mt-0.5">{m.category}</div>
+                            <div className="font-bold text-gray-900 text-lg">{group.name}</div>
                           </td>
-                          <td className="p-4 capitalize">{m.dosageForm}</td>
-                          <td className="p-4">{m.strength}</td>
-                          <td className="p-4 capitalize">
-                            {(() => {
-                              const unit = String(m.strength || '').replace(/\s+/g,'').toLowerCase().match(/(mg|ml|g)$/);
-                              return unit ? unit[1] : '—';
-                            })()}
+                          <td className="p-4">
+                            <span className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-600">{group.category}</span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="font-medium">{group.variations.length}</span>
                           </td>
                           <td className="p-4 text-right font-bold">
-                            {m.totalQuantity || 0} <span className="text-xs font-normal text-muted-foreground ml-1">{m.unit}</span>
+                            {group.totalQuantity || 0}
                           </td>
                           <td className="p-4">
                             <div className="flex justify-center">
@@ -384,97 +450,109 @@ export function Inventory({
                               </span>
                             </div>
                           </td>
-                          <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => handleViewBatchesClick(safeMedicines.find(x => x.id === (m.ids?.[0] || m.id)) || m)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border bg-white text-blue-600 hover:bg-blue-50 transition-colors font-medium shadow-sm"
-                                title="View Batches"
-                              >
-                                <Eye className="w-4 h-4" />
-                                View Batches
-                              </button>
-                              {!isStaff && (
+                          {!isStaff && (
+                            <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex justify-end gap-2">
                                 <button
-                                  onClick={() => {
-                                    setPreselectedMedicineId(m.ids?.[0] || m.id);
-                                    setShowAddStockForm(true);
-                                  }}
+                                  onClick={() => handleAddVariationClick(group.name)}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border bg-white text-green-600 hover:bg-green-50 transition-colors font-medium shadow-sm"
-                                  title="Add Batch"
+                                  title="Add Variation"
                                 >
                                   <Plus className="w-4 h-4" />
-                                  Add Batch
+                                  Add Variation
                                 </button>
-                              )}
-                              {!isStaff && (
-                                <>
-                                  <button
-                                    onClick={() => handleEditProductClick(safeMedicines.find(x => x.id === (m.ids?.[0] || m.id)) || m)}
-                                    className="p-1.5 rounded-md border bg-white text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
-                                    title="Edit Product"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`Are you sure you want to delete ${m.name}? All batch data will be lost.`)) {
-                                        onDeleteMedicine?.(m.ids?.[0] || m.id);
-                                      }
-                                    }}
-                                    className="p-1.5 rounded-md border bg-white text-red-600 hover:bg-red-50 transition-colors shadow-sm"
-                                    title="Delete Product"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                         {isExpanded && (
-                          <tr className="bg-blue-50/30">
-                            <td colSpan="7" className="p-0">
-                              <div className="p-6 border-l-4 border-blue-500 bg-white shadow-inner animate-in slide-in-from-top-2 duration-200">
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                  <div className="bg-gray-50 p-4 rounded-lg border">
-                                    <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Pricing & Unit</p>
-                                    <div className="space-y-1">
-                                      <p className="text-lg font-bold text-gray-900">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(m.price || 0)}</p>
-                                      <p className="text-sm text-gray-600">Per {m.unit || 'unit'}</p>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="bg-gray-50 p-4 rounded-lg border">
-                                    <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Stock Details</p>
-                                    <div className="space-y-1">
-                                      <p className="text-sm"><span className="text-gray-500">Min Level:</span> <span className="font-semibold">{Math.max(50, Number(m.minStockLevel || 0))}</span></p>
-                                      <p className="text-sm"><span className="text-gray-500">Total Batches:</span> <span className="font-semibold">{m.batches?.length || 0}</span></p>
-                                    </div>
-                                  </div>
-
-                                  {/* Product Description removed per request */}
-                                </div>
-
-                                <div className="mt-6 flex justify-between items-center pt-4 border-t border-gray-100">
-                                  <div className="flex gap-4">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                                      <span className="text-sm text-gray-600">Active Stock</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                                      <span className="text-sm text-gray-600">Managed Inventory</span>
-                                    </div>
-                                  </div>
-                                  <button 
-                                    onClick={() => handleViewBatchesClick(m)}
-                                    className="text-blue-600 hover:text-blue-800 text-sm font-bold flex items-center gap-1 group"
-                                  >
-                                    Manage Batch Records
-                                    <ChevronDown className="w-4 h-4 transform -rotate-90 group-hover:translate-x-1 transition-transform" />
-                                  </button>
-                                </div>
+                          <tr className="bg-gray-50/50">
+                            <td colSpan={isStaff ? 6 : 7} className="p-4">
+                              <div className="bg-white rounded-lg border shadow-sm overflow-hidden ml-10">
+                                <table className="min-w-full text-sm">
+                                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                    <tr>
+                                      <th className="p-3 text-left">Dosage & Strength</th>
+                                      <th className="p-3 text-right">Stock</th>
+                                      <th className="p-3 text-right">Price</th>
+                                      <th className="p-3 text-right">Min Level</th>
+                                      {!isStaff && <th className="p-3 text-right">Actions</th>}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {group.variations.map((v) => {
+                                      const vStatus = getStockStatus(v.totalQuantity, v.minStockLevel);
+                                      return (
+                                        <tr 
+                                          key={v.id} 
+                                          className="hover:bg-blue-50/30 transition-colors cursor-pointer"
+                                          onClick={() => handleViewBatchesClick(v)}
+                                        >
+                                          <td className="p-3">
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-semibold text-gray-900 capitalize">{v.dosageForm}</span>
+                                              <span className="text-gray-500">•</span>
+                                              <span className="text-gray-700">{v.strength}</span>
+                                            </div>
+                                          </td>
+                                          <td className="p-3 text-right font-medium">
+                                            <div className="flex flex-col items-end">
+                                              <span className={v.totalQuantity <= (v.minStockLevel || 50) ? 'text-amber-600' : 'text-gray-900'}>
+                                                {v.totalQuantity} {v.unit}
+                                              </span>
+                                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${vStatus.color}`}>
+                                                {vStatus.label}
+                                              </span>
+                                            </div>
+                                          </td>
+                                          <td className="p-3 text-right text-gray-900 font-semibold">
+                                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v.price || 0)}
+                                          </td>
+                                          <td className="p-3 text-right text-gray-500">
+                                            {Math.max(50, Number(v.minStockLevel || 0))}
+                                          </td>
+                                          {!isStaff && (
+                                            <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                              <div className="flex justify-end gap-2">
+                                                <button
+                                                  onClick={() => handleViewBatchesClick(v)}
+                                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                  title="View Batches"
+                                                >
+                                                  <Eye className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                  onClick={() => {
+                                                    setPreselectedMedicineId(v.id);
+                                                    setShowAddStockForm(true);
+                                                  }}
+                                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                  title="Add Batch"
+                                                >
+                                                  <Plus className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                  onClick={() => handleEditProductClick(v)}
+                                                  className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                                                  title="Edit Variation"
+                                                >
+                                                  <Pencil className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                  onClick={() => setDeleteModal({ isOpen: true, id: v.id, name: `${v.name} (${v.dosageForm} ${v.strength})` })}
+                                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                  title="Delete Variation"
+                                                >
+                                                  <Trash2 className="w-4 h-4" />
+                                                </button>
+                                              </div>
+                                            </td>
+                                          )}
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
                               </div>
                             </td>
                           </tr>
@@ -545,8 +623,8 @@ export function Inventory({
           medicine={viewingMedicine}
           currentUser={currentUser}
           onClose={() => setViewingMedicine(null)}
-          onDeleteBatch={handleDeleteBatch}
-          onUpdateBatch={handleUpdateBatch}
+          onDeleteBatch={handleDeleteBatchLocal}
+          onUpdateBatch={handleUpdateBatchLocal}
         />
       )}
       {showAddStockForm && (
@@ -560,6 +638,18 @@ export function Inventory({
           }}
         />
       )}
+
+      <DeleteWarningModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, id: null, name: '' })}
+        onConfirm={() => {
+          onDeleteMedicine?.(deleteModal.id);
+          setDeleteModal({ isOpen: false, id: null, name: '' });
+        }}
+        title="Delete Medicine Variation"
+        message="Are you sure you want to delete this medicine variation? This will remove all associated batch records and history."
+        itemName={deleteModal.name}
+      />
     </div>
   );
 }

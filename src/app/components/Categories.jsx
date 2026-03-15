@@ -6,6 +6,7 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCategory, setNewCategory] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Ensure arrays
   const safeMedicines = Array.isArray(medicines) ? medicines : [];
@@ -46,12 +47,19 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
     }));
   }, [safeMedicines, safeCategories]);
 
-  const handleAddCategory = (e) => {
+  const handleAddCategory = async (e) => {
     e.preventDefault();
     if (newCategory.trim()) {
-      onAddCategory(newCategory.trim());
-      setNewCategory('');
-      setShowAddForm(false);
+      setSubmitting(true);
+      try {
+        await onAddCategory(newCategory.trim());
+        setNewCategory('');
+        setShowAddForm(false);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -102,6 +110,13 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
 
   return (
     <div>
+      {/* Submitting Overlay */}
+      {submitting && (
+        <div className="fixed inset-0 bg-white/70 backdrop-blur-[1px] z-[100] flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-900 font-bold">Creating Category...</p>
+        </div>
+      )}
       {/* Header */}
       <div className="mb-6 flex justify-between items-start">
         <div>

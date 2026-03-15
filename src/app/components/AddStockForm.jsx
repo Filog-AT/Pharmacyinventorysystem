@@ -12,7 +12,16 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
     unitsPerBlister: 1,
   });
 
+  useEffect(() => {
+    // Prevent background scrolling when form is open
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   const [totalUnits, setTotalUnits] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const total = (formData.boxesReceived || 0) * (formData.blistersPerBox || 1) * (formData.unitsPerBlister || 1);
@@ -27,7 +36,7 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.medicineId) {
       alert('Please select a medicine');
@@ -44,14 +53,20 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
       return;
     }
 
-    onSubmit(formData.medicineId, {
-      batchNumber: (formData.batchNumber || '').trim(),
-      expiryDate: formData.expiryDate,
-      supplier: (formData.supplier || '').trim(),
-      boxesReceived: boxes,
-      blistersPerBox: blisters,
-      unitsPerBlister: units,
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit(formData.medicineId, {
+        batchNumber: (formData.batchNumber || '').trim(),
+        expiryDate: formData.expiryDate,
+        supplier: (formData.supplier || '').trim(),
+        boxesReceived: boxes,
+        blistersPerBox: blisters,
+        unitsPerBlister: units,
+      });
+    } catch (err) {
+      console.error(err);
+      setSubmitting(false);
+    }
   };
 
   const selectedMedicine = medicines.find(m => m.id === formData.medicineId);
@@ -74,8 +89,21 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
   }, [isBottle]);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Submitting Overlay */}
+        {submitting && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-[60] flex flex-col items-center justify-center animate-in fade-in duration-200">
+            <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+            <p className="text-gray-900 font-bold">Adding Stock...</p>
+          </div>
+        )}
         <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Calculator className="w-5 h-5 text-blue-600" />

@@ -26,6 +26,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   const [quantityInputs, setQuantityInputs] = useState({});
   const [amountReceived, setAmountReceived] = useState('');
   const [saleSuccess, setSaleSuccess] = useState(null);
+  const [processing, setProcessing] = useState(false);
  
   useEffect(() => {
     (async () => {
@@ -130,14 +131,16 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     setCart(cart.filter(item => !(item.medicine.id === medicineId && item.sellUnit === unit)));
   };
  
-  const total = cart.reduce((sum, item) => {
+  const subtotal = cart.reduce((sum, item) => {
     return sum + ((item.unitPrice || (item.medicine.price || 0)) * item.quantity);
   }, 0);
-  const tax = 0;
-  const grandTotal = total;
+  const vatRate = 0.12;
+  const tax = subtotal * vatRate;
+  const grandTotal = subtotal + tax;
  
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+    setProcessing(true);
 
     try {
       // Process stock reduction using FEFO
@@ -166,11 +169,11 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             unitSold: ci.sellUnit,
             price: ci.medicine.price || 0,
           })),
-          subtotal: total,
-          tax: 0,
-          grandTotal: total,
+          subtotal: subtotal,
+          tax: tax,
+          grandTotal: grandTotal,
           amountReceived: Number(amountReceived),
-          change: Number(amountReceived) - total,
+          change: Number(amountReceived) - grandTotal,
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
         };
@@ -187,10 +190,11 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           entityName: 'Receipt',
           details: {
             itemsCount: cart.length,
-            subtotal: total,
-            grandTotal: total,
+            subtotal: subtotal,
+            tax: tax,
+            grandTotal: grandTotal,
             amountReceived: Number(amountReceived),
-            change: Number(amountReceived) - total,
+            change: Number(amountReceived) - grandTotal,
             customerName: customerName || 'Walk-in',
           },
         });
@@ -209,6 +213,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     } catch (error) {
       console.error('[Receipts] Checkout error:', error);
       alert(`Error processing sale: ${error.message}`);
+    } finally {
+      setProcessing(false);
     }
 
     return null;
@@ -259,7 +265,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
       })
       .join('');
     const subtotal = Number(r.subtotal || 0);
-    const grand = Number(r.grandTotal || subtotal);
+    const tax = Number(r.tax || 0);
+    const grand = Number(r.grandTotal || subtotal + tax);
     const received = Number(r.amountReceived || 0);
     const change = Number(r.change || 0);
     const rid = r.id || '';
@@ -295,7 +302,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   </table>
   <table class="totals">
     <tr><td class="label">Subtotal</td><td class="value">${formatMoney(subtotal)}</td></tr>
-    <tr><td class="label">Total</td><td class="value">${formatMoney(grand)}</td></tr>
+    <tr><td class="label">VAT (12%)</td><td class="value">${formatMoney(tax)}</td></tr>
+    <tr><td class="label">Total</td><td class="value" style="font-size: 16px; color: #3b82f6;">${formatMoney(grand)}</td></tr>
     ${received > 0 ? `
     <tr><td class="label">Cash Received</td><td class="value">${formatMoney(received)}</td></tr>
     <tr><td class="label">Change</td><td class="value">${formatMoney(change)}</td></tr>
@@ -355,19 +363,26 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     doc.line(360, y, 540, y);
     y += 18;
     const subtotal = Number(r.subtotal || 0);
-    const grand = Number(r.grandTotal || subtotal);
+    const tax = Number(r.tax || 0);
+    const grand = Number(r.grandTotal || subtotal + tax);
     const received = Number(r.amountReceived || 0);
     const change = Number(r.change || 0);
     doc.setFontSize(12);
     doc.text('Subtotal', 400, y);
     doc.text(formatMoney(subtotal), 540, y, { align: 'right' });
     y += 18;
-    doc.setFontSize(12);
+    doc.text('VAT (12%)', 400, y);
+    doc.text(formatMoney(tax), 540, y, { align: 'right' });
+    y += 18;
+    doc.setFontSize(14);
+    doc.setTextColor(59, 130, 246); // Blue
     doc.text('Total', 400, y);
     doc.text(formatMoney(grand), 540, y, { align: 'right' });
+    doc.setTextColor(17, 24, 39); // Back to black
     
     if (received > 0) {
       y += 18;
+      doc.setFontSize(12);
       doc.text('Cash Received', 400, y);
       doc.text(formatMoney(received), 540, y, { align: 'right' });
       y += 18;
@@ -392,8 +407,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
         quantity: ci.quantity,
         price: ci.medicine.price || 0
       })),
-      subtotal: total,
-      tax: 0,
+      subtotal: subtotal,
+      tax: tax,
       grandTotal: grandTotal,
       userId: currentUser?.uid || 'unknown',
       userName: currentUser?.name || 'Unknown User',
@@ -412,7 +427,16 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   };
  
   return (
-    <div>
+    <div className="space-y-6">
+      {/* Processing Overlay */}
+      {processing && (
+        <div className="fixed inset-0 z-[200] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+          <h2 className="text-xl font-bold text-gray-900">Processing Sale</h2>
+          <p className="text-gray-500">Please wait while we finalize the transaction...</p>
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Sales</h1>
         <p className="text-gray-600">Process sales and manage transactions</p>
@@ -596,7 +620,11 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             <div className="space-y-2 border-t pt-4 mb-4">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
-                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(total)}</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>VAT (12%):</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(tax)}</span>
               </div>
               <div className="flex justify-between text-lg font-bold border-t pt-2">
                 <span>Total:</span>
@@ -736,7 +764,8 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
               const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
               const label = `${ts.toLocaleString()}${r.customerName && r.customerName !== 'Walk-in' ? ' - ' + r.customerName : ''}`;
               const subtotal = r.subtotal || 0;
-              const grand = r.grandTotal || subtotal;
+              const tax = r.tax || 0;
+              const grand = r.grandTotal || (subtotal + tax);
               return (
                 <details key={r.id || label} className="bg-card rounded-md border p-2">
                   <summary className="cursor-pointer text-sm font-medium">{label}</summary>
@@ -753,6 +782,10 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                       <div className="flex justify-between text-sm">
                         <span>Subtotal</span>
                         <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>VAT (12%)</span>
+                        <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(tax)}</span>
                       </div>
                       <div className="flex justify-between text-sm font-semibold">
                         <span>Total</span>
@@ -809,7 +842,11 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
               <div className="border-t pt-2 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
-                  <span>{formatMoney(total)}</span>
+                  <span>{formatMoney(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>VAT (12%)</span>
+                  <span>{formatMoney(tax)}</span>
                 </div>
                 <div className="flex justify-between text-lg font-bold border-t pt-2 text-blue-600">
                   <span>Total</span>
@@ -846,17 +883,27 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
                 <div className="flex gap-2">
                   <button
                     onClick={handlePrintAndComplete}
-                    disabled={!amountReceived || Number(amountReceived) < grandTotal}
-                    className="flex-1 px-3 py-3 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    disabled={processing || !amountReceived || Number(amountReceived) < grandTotal}
+                    className="flex-1 px-3 py-3 rounded-md bg-blue-600 text-white hover:bg-blue-700 font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    Print & Complete Sale
+                    {processing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Processing...
+                      </>
+                    ) : 'Print & Complete Sale'}
                   </button>
                   <button
                     onClick={handleCompleteSaleOnly}
-                    disabled={!amountReceived || Number(amountReceived) < grandTotal}
-                    className="flex-1 px-3 py-3 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    disabled={processing || !amountReceived || Number(amountReceived) < grandTotal}
+                    className="flex-1 px-3 py-3 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 font-bold disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    Complete Sale
+                    {processing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Processing...
+                      </>
+                    ) : 'Complete Sale'}
                   </button>
                 </div>
                 <button
@@ -882,11 +929,19 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             </div>
             <div className="p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span>Total</span>
-                <span className="font-semibold">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.grandTotal || saleSuccess.subtotal || 0))}</span>
+                <span>Subtotal</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.subtotal || 0))}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span>Cash</span>
+                <span>VAT (12%)</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.tax || 0))}</span>
+              </div>
+              <div className="flex justify-between text-sm font-bold border-t pt-1">
+                <span>Total</span>
+                <span className="text-blue-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.grandTotal || 0))}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Cash Received</span>
                 <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(saleSuccess.amountReceived || 0))}</span>
               </div>
               <div className="flex justify-between text-sm">

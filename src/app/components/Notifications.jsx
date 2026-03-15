@@ -68,26 +68,6 @@ export function Notifications({ medicines, onNavigateToTab }) {
       }
     });
 
-    // Add some general notifications
-    notifications.push(
-      {
-        id: 'general-1',
-        type: 'success',
-        title: 'New Order Received',
-        message: 'Order #1234 has been successfully placed with PharmaCorp.',
-        time: '5 hours ago',
-        read: true
-      },
-      {
-        id: 'general-2',
-        type: 'info',
-        title: 'System Update',
-        message: 'The inventory system will be updated tonight at 2 AM.',
-        time: '1 day ago',
-        read: true
-      }
-    );
-
     return notifications;
   };
 

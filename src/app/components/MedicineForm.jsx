@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 export function MedicineForm({ medicine, categories, existingMedicines = [], onSubmit, onClose }) {
+  useEffect(() => {
+    // Prevent background scrolling when form is open
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   const [formData, setFormData] = useState({
     name: '',
     category: 'Antibiotic',
@@ -20,11 +28,28 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
     minStockLevel: 50,
   });
 
+  // Sync unit and subUnitType with dosageForm
+  useEffect(() => {
+    if (!medicine || medicine.isVariation) {
+      const formPlural = formData.dosageForm === 'tablet' ? 'tablets' : 
+                         formData.dosageForm === 'capsule' ? 'capsules' : 
+                         formData.dosageForm === 'syrup' ? 'bottles' : 
+                         formData.dosageForm === 'injection' ? 'vials' : 
+                         formData.dosageForm === 'ointment' ? 'tubes' : 'units';
+      
+      setFormData(prev => ({
+        ...prev,
+        unit: prev.unit === 'boxes' ? 'boxes' : formPlural,
+        subUnitType: formPlural
+      }));
+    }
+  }, [formData.dosageForm, !!medicine]);
+
   useEffect(() => {
     if (medicine) {
       setFormData({
         name: medicine.name,
-        category: medicine.category,
+        category: medicine.category || 'Antibiotic',
         dosageForm: medicine.dosageForm || 'tablet',
         strength: medicine.strength || '',
         strengthValue: (() => {
@@ -49,9 +74,11 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
   }, [medicine]);
 
   const [customCategory, setCustomCategory] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     let payload = { ...formData };
     payload.name = (payload.name || '').trim();
     const sv = String(payload.strengthValue || '').trim();
@@ -63,45 +90,56 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
     const blisters = Number(payload.blisterCount || 1);
     const perBlister = Number(payload.tabletCount || 1);
 
-    if (!medicine) {
+    if (!medicine || medicine.isVariation) {
       if (!payload.name) {
         alert('Please enter medicine name');
+        setSubmitting(false);
         return;
       }
       if (!payload.category) {
         alert('Please select a category');
+        setSubmitting(false);
         return;
       }
       if (!payload.strength) {
         alert('Please enter dosage/strength');
+        setSubmitting(false);
         return;
       }
       if (!payload.unit) {
         alert('Please select a unit');
+        setSubmitting(false);
         return;
       }
       if (!payload.expiryDate) {
         alert('Please select an expiry date');
+        setSubmitting(false);
         return;
       }
       if (qty <= 0) {
         alert('Quantity must be greater than 0');
+        setSubmitting(false);
         return;
       }
+      
+      // Calculate real total pieces for the initial batch
       if (payload.unit === 'boxes') {
         if (blisters <= 0 || perBlister <= 0) {
           alert('Blister and per-blister counts must be greater than 0');
+          setSubmitting(false);
           return;
         }
-        payload.subUnitType = payload.subUnitType || 'tablets';
-        payload.quantity = qty * blisters * perBlister;
+        const pluralForm = payload.dosageForm === 'tablet' ? 'tablets' : 
+                           payload.dosageForm === 'capsule' ? 'capsules' : 'units';
+        payload.subUnitType = payload.subUnitType || pluralForm;
+        // Keep unit as 'boxes' for onSubmit so handleAddMedicine knows how to process it
       } else {
         payload.subUnitType = payload.unit;
       }
     }
 
-    // Duplicate check for new medicines
-    if (!medicine) {
+    // Duplicate check for new medicines/variations
+    if (!medicine || medicine.isVariation) {
       const normName = (payload.name || '').toLowerCase().trim();
       const normStrength = (payload.strength || '').toLowerCase().replace(/\s+/g, '');
       const normForm = (payload.dosageForm || '').toLowerCase().trim();
@@ -115,6 +153,7 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
         try {
           window.dispatchEvent(new CustomEvent('open-add-stock', { detail: { medicineId: matched.id } }));
         } catch {}
+        setSubmitting(false);
         onClose?.();
         return;
       }
@@ -124,12 +163,18 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
       const newCat = (customCategory || '').trim();
       if (!newCat) {
         alert('Please enter a category name');
+        setSubmitting(false);
         return;
       }
       payload.category = newCat;
     }
 
-    onSubmit(payload);
+    try {
+      await onSubmit(payload);
+    } catch (err) {
+      console.error(err);
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -178,11 +223,19 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
     formData.unit === 'boxes' ? (formData.subUnitType || 'tablets') : (formData.unit || 'units');
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto relative"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
           <h2 className="text-xl font-semibold">
-            {medicine ? 'Edit Medicine' : 'Add New Medicine'}
+            {medicine?.isVariation 
+              ? `Add Variation for ${medicine.name}` 
+              : (medicine?.id ? 'Edit Medicine' : 'Add New Medicine')}
           </h2>
           <button
             onClick={onClose}
@@ -194,6 +247,13 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {medicine?.isVariation && (
+            <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mb-2">
+              <p className="text-sm text-blue-800">
+                You are adding a new dosage or strength for <span className="font-bold">{medicine.name}</span>.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label htmlFor="name" className="block text-sm font-medium mb-1">
@@ -206,11 +266,15 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-medium"
                 placeholder="Enter medicine name"
-                disabled={!!medicine}
+                disabled={!!medicine?.id || medicine?.isVariation}
               />
-              {medicine && <p className="text-xs text-muted-foreground mt-1">Product name cannot be changed.</p>}
+              {(!!medicine?.id || medicine?.isVariation) && (
+                <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider font-semibold">
+                  {medicine?.isVariation ? 'Adding variation to this product' : 'Product name cannot be changed'}
+                </p>
+              )}
             </div>
 
             <div>
@@ -240,7 +304,7 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
                 onChange={handleChange}
                 required
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 capitalize"
-                disabled={!!medicine}
+                disabled={!!medicine?.id}
               >
                 {dosageForms.map(form => (
                   <option key={form} value={form}>{form}</option>
@@ -263,7 +327,7 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
                   step="0.01"
                   className="col-span-2 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., 500"
-                  disabled={!!medicine}
+                  disabled={!!medicine?.id}
                 />
                 <select
                   name="strengthUnit"
@@ -271,7 +335,7 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
                   onChange={handleChange}
                   required
                   className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={!!medicine}
+                  disabled={!!medicine?.id}
                 >
                   <option value="mg">mg</option>
                   <option value="ml">ml</option>
@@ -311,135 +375,128 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
               </div>
             </div>
 
-            {!medicine && (
+            {(!medicine || medicine.isVariation) && (
+              <div className="col-span-2 bg-gray-50/50 p-4 rounded-lg border border-dashed border-gray-200">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Inventory Setup</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="unit" className="block text-sm font-medium mb-1">
+                      Selling Unit *
+                    </label>
+                    <select
+                      id="unit"
+                      name="unit"
+                      value={formData.unit}
+                      onChange={handleChange}
+                      required
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="tablets">Tablets</option>
+                      <option value="capsules">Capsules</option>
+                      <option value="bottles">Bottles</option>
+                      <option value="boxes">Boxes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="quantity" className="block text-sm font-medium mb-1">
+                      {formData.unit === 'boxes' ? 'Number of Boxes *' : 'Initial Quantity *'}
+                    </label>
+                    <input
+                      type="number"
+                      id="quantity"
+                      name="quantity"
+                      value={formData.quantity}
+                      onChange={handleChange}
+                      required
+                      min="0"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      placeholder={formData.unit === 'boxes' ? "e.g., 10 boxes" : "e.g., 500 tablets"}
+                    />
+                  </div>
+
+                  {formData.unit === 'boxes' && (
+                    <>
+                      <div className="col-span-1">
+                        <label htmlFor="blisterCount" className="block text-sm font-medium mb-1 text-blue-800 font-bold">
+                          Blisters per Box *
+                        </label>
+                        <input
+                          type="number"
+                          id="blisterCount"
+                          name="blisterCount"
+                          value={formData.blisterCount}
+                          onChange={handleChange}
+                          min="1"
+                          required
+                          className="w-full px-3 py-2 border border-blue-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <label htmlFor="tabletCount" className="block text-sm font-medium mb-1 text-blue-800 font-bold">
+                          Units per Blister *
+                        </label>
+                        <input
+                          type="number"
+                          id="tabletCount"
+                          name="tabletCount"
+                          value={formData.tabletCount}
+                          onChange={handleChange}
+                          min="1"
+                          required
+                          className="w-full px-3 py-2 border border-blue-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
+                      <div className="col-span-2 flex items-center justify-between bg-blue-50 p-2 rounded-md border border-blue-100">
+                        <div className="text-xs text-blue-800">
+                          Final pieces (Inventory total):
+                        </div>
+                        <div className="font-bold text-blue-700">
+                          {totalPieces} {formData.subUnitType || 'tablets'}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="col-span-2 grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="quantity" className="block text-sm font-medium mb-1">
-                  Quantity *
+                <label htmlFor="price" className="block text-sm font-medium mb-1">
+                  Selling Price (₱) *
                 </label>
                 <input
                   type="number"
-                  id="quantity"
-                  name="quantity"
-                  value={formData.quantity}
+                  id="price"
+                  name="price"
+                  value={formData.price}
                   onChange={handleChange}
                   required
                   min="0"
+                  step="0.01"
                   className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Price per unit"
                 />
               </div>
-            )}
 
-            {!medicine && (
-              <div>
-                <label htmlFor="unit" className="block text-sm font-medium mb-1">
-                  Unit *
-                </label>
-                <select
-                  id="unit"
-                  name="unit"
-                  value={formData.unit}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="tablets">Tablets</option>
-                  <option value="capsules">Capsules</option>
-                  <option value="bottles">Bottles</option>
-                  <option value="boxes">Boxes</option>
-                </select>
-              </div>
-            )}
-
-            {formData.unit === 'boxes' && !medicine && (
-              <>
+              {(!medicine || medicine.isVariation) && (
                 <div>
-                  <label htmlFor="blisterCount" className="block text-sm font-medium mb-1">
-                    Blister Packs/Strips per Box *
+                  <label htmlFor="expiryDate" className="block text-sm font-medium mb-1">
+                    Expiry Date *
                   </label>
                   <input
-                    type="number"
-                    id="blisterCount"
-                    name="blisterCount"
-                    value={formData.blisterCount}
+                    type="date"
+                    id="expiryDate"
+                    name="expiryDate"
+                    value={formData.expiryDate}
                     onChange={handleChange}
-                    min="1"
                     required
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <div>
-                  <label htmlFor="tabletCount" className="block text-sm font-medium mb-1">
-                    Tablets/Capsules per Blister/Strip *
-                  </label>
-                  <input
-                    type="number"
-                    id="tabletCount"
-                    name="tabletCount"
-                    value={formData.tabletCount}
-                    onChange={handleChange}
-                    min="1"
-                    required
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="subUnitType" className="block text-sm font-medium mb-1">
-                    Final Unit Type *
-                  </label>
-                  <select
-                    id="subUnitType"
-                    name="subUnitType"
-                    value={formData.subUnitType}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="tablets">Tablets</option>
-                    <option value="capsules">Capsules</option>
-                  </select>
-                </div>
-                <div className="flex items-end">
-                  <div className="w-full bg-blue-50 px-3 py-2 rounded-md border border-blue-100 text-blue-700 text-sm">
-                    Total {formData.subUnitType || 'tablets'}: <span className="font-bold">{totalPieces}</span>
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div>
-              <label htmlFor="price" className="block text-sm font-medium mb-1">
-                Price (₱) *
-              </label>
-              <input
-                type="number"
-                id="price"
-                name="price"
-                value={formData.price}
-                onChange={handleChange}
-                required
-                min="0"
-                step="0.01"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              )}
             </div>
-
-            {!medicine && (
-              <div>
-                <label htmlFor="expiryDate" className="block text-sm font-medium mb-1">
-                  Expiry Date *
-                </label>
-                <input
-                  type="date"
-                  id="expiryDate"
-                  name="expiryDate"
-                  value={formData.expiryDate}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            )}
-
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t">
@@ -454,7 +511,7 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
             >
-              {medicine ? 'Save Changes' : 'Add Medicine'}
+              {medicine?.isVariation ? 'Add Variation' : (medicine?.id ? 'Save Changes' : 'Add Medicine')}
             </button>
           </div>
         </form>

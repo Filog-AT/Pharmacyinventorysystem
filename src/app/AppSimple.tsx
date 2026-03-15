@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
+import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings as SettingsIcon, Menu, X, LogOut, UserCircle, ShoppingCart, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from '@/app/components/Dashboard';
@@ -40,82 +41,6 @@ const loadFirebaseAsync = async () => {
   }
 };
 
-// Sample data
-const initialMedicines = [
-  {
-    id: '1',
-    name: 'Amoxicillin',
-    category: 'Antibiotic',
-    dosageForm: 'tablet',
-    strength: '500mg',
-    totalQuantity: 150,
-    unit: 'tablets',
-    minStockLevel: 50,
-    price: 12.99,
-    batches: []
-  },
-  {
-    id: '2',
-    name: 'Ibuprofen',
-    category: 'Painkiller',
-    dosageForm: 'tablet',
-    strength: '400mg',
-    totalQuantity: 25,
-    unit: 'bottles',
-    minStockLevel: 50,
-    price: 8.50,
-    batches: []
-  },
-  {
-    id: '3',
-    name: 'Lisinopril',
-    category: 'Cardiovascular',
-    dosageForm: 'tablet',
-    strength: '10mg',
-    totalQuantity: 200,
-    unit: 'tablets',
-    minStockLevel: 50,
-    price: 15.75,
-    batches: []
-  },
-  {
-    id: '4',
-    name: 'Metformin',
-    category: 'Diabetes',
-    dosageForm: 'tablet',
-    strength: '500mg',
-    totalQuantity: 5,
-    unit: 'boxes',
-    minStockLevel: 50,
-    price: 22.00,
-    batches: []
-  },
-  {
-    id: '5',
-    name: 'Cetirizine',
-    category: 'Antihistamine',
-    dosageForm: 'tablet',
-    strength: '10mg',
-    totalQuantity: 80,
-    unit: 'tablets',
-    minStockLevel: 50,
-    price: 9.25,
-    batches: []
-  },
-  {
-    id: '6',
-    name: 'Omeprazole',
-    category: 'Gastrointestinal',
-    dosageForm: 'capsule',
-    strength: '20mg',
-    totalQuantity: 120,
-    unit: 'capsules',
-    minStockLevel: 50,
-    price: 18.50,
-    batches: []
-  }
-];
-
 type CurrentUser = {
   uid: string;
   email: string | null;
@@ -125,9 +50,42 @@ type CurrentUser = {
 
 function AppSimple() {
   const [currentUser, setCurrentUser] = useState<CurrentUser>(null);
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    return hash || 'dashboard';
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [medicines, setMedicines] = useState(initialMedicines);
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [medicines, setMedicines] = useState<any[]>([]);
+
+  const notifications = useMemo(() => {
+    const list: any[] = [];
+    const today = new Date();
+    const readRaw = localStorage.getItem('pharmacy_read_notifications');
+    const readSet = new Set(readRaw ? JSON.parse(readRaw) : []);
+
+    medicines.forEach(med => {
+      const qty = Number(med.totalQuantity || 0);
+      const lowStockThreshold = med.minStockLevel || 50;
+      if (qty <= lowStockThreshold) {
+        list.push({ id: `low-${med.id}`, type: 'warning', title: 'Low Stock', message: `${med.name} is low (${qty})`, time: 'Recent' });
+      }
+      (med.batches || []).forEach((b: any) => {
+        if (!b.expiryDate) return;
+        const exp = new Date(b.expiryDate);
+        const days = Math.ceil((exp.getTime() - today.getTime()) / 86400000);
+        if (days < 0) {
+          list.push({ id: `expired-${med.id}-${b.id}`, type: 'error', title: 'Expired', message: `${med.name} (Batch ${b.batchNumber}) expired`, time: 'Alert' });
+        } else if (days <= 90) {
+          list.push({ id: `expiring-${med.id}-${b.id}`, type: 'warning', title: 'Expiring Soon', message: `${med.name} expires in ${days}d`, time: 'Alert' });
+        }
+      });
+    });
+
+    return list.map(n => ({ ...n, read: readSet.has(n.id) }));
+  }, [medicines]);
+
+  const unreadNotifs = notifications.filter(n => !n.read);
   const [firebaseReady, setFirebaseReady] = useState(false);
   const [categories, setCategories] = useState([
     'Antibiotic',
@@ -160,7 +118,34 @@ function AppSimple() {
     } catch {
       try { window.scrollTo(0, 0); } catch {}
     }
+    // Sync hash with activePage for browser history
+    if (window.location.hash !== `#${activePage}`) {
+      window.history.pushState(null, '', `#${activePage}`);
+    }
   }, [activePage]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const hash = window.location.hash.replace('#', '');
+      
+      // If user is logged in and tries to go back to an empty hash or login state
+      if (currentUser && (!hash || hash === 'login')) {
+        if (confirm('Going back will sign you out. Continue?')) {
+          handleLogoutAction();
+        } else {
+          // Re-push current state to prevent going back
+          window.history.pushState(null, '', `#${activePage}`);
+        }
+        return;
+      }
+
+      if (hash && hash !== activePage) {
+        setActivePage(hash);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activePage, currentUser]);
 
   useEffect(() => {
     try {
@@ -318,20 +303,6 @@ function AppSimple() {
         );
         
         setMedicines(uniqueMedicines);
-
-        if (!firebaseMedicines || firebaseMedicines.length === 0) {
-          console.log('[AppSimple] Populating Firebase with sample data...');
-          for (const medicine of initialMedicines) {
-            try {
-              await services.medicineService.addMedicine(medicine);
-            } catch (e) {
-              console.warn('[AppSimple] Could not add medicine to Firebase:', e);
-            }
-          }
-          // Refresh after adding initial data
-          const refreshed = await services.medicineService.getMedicines();
-          setMedicines(refreshed);
-        }
         setFirebaseReady(true);
       } catch (error) {
         console.warn('[AppSimple] Firebase sync failed, using local data:', error);
@@ -374,26 +345,30 @@ function AppSimple() {
     })();
   };
 
+  const handleLogoutAction = () => {
+    const user = currentUser;
+    (async () => {
+      try {
+        await auditService.logAction({
+          userId: user?.uid || 'unknown',
+          userName: user?.name || 'Unknown User',
+          userRole: user?.role || 'unknown',
+          action: 'LOGOUT',
+          entityType: 'auth',
+          entityName: 'User Logout',
+          details: {},
+        });
+      } catch (e) {
+        console.warn('[AppSimple] Failed to log logout:', e);
+      }
+    })();
+    setCurrentUser(null);
+    setActivePage('dashboard');
+  };
+
   const handleLogout = () => {
     if (confirm('Are you sure you want to sign out?')) {
-      const user = currentUser;
-      (async () => {
-        try {
-          await auditService.logAction({
-            userId: user?.uid || 'unknown',
-            userName: user?.name || 'Unknown User',
-            userRole: user?.role || 'unknown',
-            action: 'LOGOUT',
-            entityType: 'auth',
-            entityName: 'User Logout',
-            details: {},
-          });
-        } catch (e) {
-          console.warn('[AppSimple] Failed to log logout:', e);
-        }
-      })();
-      setCurrentUser(null);
-      setActivePage('dashboard');
+      handleLogoutAction();
     }
   };
 
@@ -613,64 +588,59 @@ function AppSimple() {
 
   const handleDeleteMedicine = async (id: string, batchId?: string) => {
     if (batchId) {
-      if (confirm('Are you sure you want to delete this batch?')) {
-        const medicine = medicines.find(m => m.id === id);
-        if (!medicine) return;
+      const medicine = medicines.find(m => m.id === id);
+      if (!medicine) return;
 
-        // Handle legacy single batch case
-        if ((!medicine.batches || medicine.batches.length === 0) && batchId === `${id}-single`) {
-          await performDeleteMedicine(id);
-          return;
-        }
+      // Handle legacy single batch case
+      if ((!medicine.batches || medicine.batches.length === 0) && batchId === `${id}-single`) {
+        await performDeleteMedicine(id);
+        return;
+      }
 
-        // Handle specific batch deletion
-        const currentBatches = medicine.batches || [];
-        const newBatches = currentBatches.filter((b: any) => b.batchId !== batchId);
-        
-        // If no batches left, update quantity to 0 but keep medicine
-        // (Or could delete medicine if preferred, but safer to keep record)
-        const newQty = newBatches.reduce((sum: number, b: any) => sum + Number(b.quantityPieces || 0), 0);
-        
-        const updated = {
-          ...medicine,
-          quantity: newQty,
-          batches: newBatches
-        };
+      // Handle specific batch deletion
+      const currentBatches = medicine.batches || [];
+      const newBatches = currentBatches.filter((b: any) => b.batchId !== batchId);
+      
+      // If no batches left, update quantity to 0 but keep medicine
+      const newQty = newBatches.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0);
+      
+      const updated = {
+        ...medicine,
+        totalQuantity: newQty,
+        batches: newBatches
+      };
 
-        setMedicines(prev => prev.map(m => m.id === id ? updated : m));
+      setMedicines(prev => prev.map(m => m.id === id ? updated : m));
 
-        // Audit log for batch deletion
-        (async () => {
-          try {
-            await auditService.logAction({
-              userId: currentUser?.uid || 'unknown',
-              userName: currentUser?.name || 'Unknown User',
-              userRole: currentUser?.role || 'unknown',
-              action: 'MEDICINE_BATCH_DELETE',
-              entityType: 'medicine',
-              entityId: id,
-              entityName: medicine.name,
-              details: { deletedBatchId: batchId, remainingQty: newQty }
-            });
-          } catch (e) {}
-        })();
+      // Audit log for batch deletion
+      (async () => {
+        try {
+          await auditService.logAction({
+            userId: currentUser?.uid || 'unknown',
+            userName: currentUser?.name || 'Unknown User',
+            userRole: currentUser?.role || 'unknown',
+            action: 'MEDICINE_BATCH_DELETE',
+            entityType: 'medicine',
+            entityId: id,
+            entityName: medicine.name,
+            details: { deletedBatchId: batchId, remainingQty: newQty }
+          });
+        } catch (e) {}
+      })();
 
-        // Firebase update
-        if (firebaseReady) {
-          try {
-            const services = await loadFirebaseAsync();
-            if (services?.medicineService) {
-              await services.medicineService.updateMedicine(id, updated);
-            }
-          } catch (error) {
-            console.error('[AppSimple] Failed to update medicine batches in Firebase:', error);
+      // Firebase update
+      if (firebaseReady) {
+        try {
+          const services = await loadFirebaseAsync();
+          if (services?.medicineService) {
+            await services.medicineService.updateMedicine(id, updated);
           }
+        } catch (error) {
+          console.error('[AppSimple] Failed to update medicine batches in Firebase:', error);
         }
       }
     } else {
-      if (confirm('Are you sure you want to delete this medicine?')) {
-        await performDeleteMedicine(id);
-      }
+      await performDeleteMedicine(id);
     }
   };
 
@@ -777,11 +747,13 @@ function AppSimple() {
         onLogout={handleLogout}
         pharmacyName={settings.pharmacyName}
       />
-      <main className="lg:ml-64 p-6">
-        <Toaster richColors position="top-right" />
-        <ErrorBoundary>
-          {renderPage()}
-        </ErrorBoundary>
+      <main className="lg:ml-64 min-h-screen flex flex-col">
+        <div className="p-6 flex-1">
+          <Toaster richColors position="top-right" />
+          <ErrorBoundary>
+            {renderPage()}
+          </ErrorBoundary>
+        </div>
       </main>
     </div>
   );

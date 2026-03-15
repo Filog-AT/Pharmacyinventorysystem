@@ -31,10 +31,16 @@ export function Login({ onLogin, pharmacyName }) {
     e.preventDefault();
     setError('');
 
-    const user = users.find(u => u.username === username && u.password === password);
+    // Check for stored user overrides
+    const storedUsers = JSON.parse(localStorage.getItem('pharmacy_users') || '[]');
+    const storedUser = storedUsers.find(u => u.username === username);
     
-    if (user) {
-      onLogin(user);
+    const baseUser = users.find(u => u.username === username);
+    
+    if (storedUser && storedUser.password === password) {
+      onLogin({ ...baseUser, ...storedUser });
+    } else if (baseUser && baseUser.password === password && !storedUser) {
+      onLogin(baseUser);
     } else {
       setError('Invalid username or password');
     }
