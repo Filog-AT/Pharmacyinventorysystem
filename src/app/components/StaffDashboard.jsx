@@ -151,21 +151,6 @@ export function StaffDashboard({ medicines = [] }) {
             {todayTransactions}
           </div>
         </div>
-        <div className="lg:col-span-2 bg-card rounded-lg border p-4">
-          <h2 className="text-lg font-semibold text-card-foreground mb-2">Inventory by Category</h2>
-          <ChartContainer
-            config={{ quantity: { label: 'Quantity', color: '#3b82f6' } }}
-            className="aspect-[16/9]"
-          >
-            <BarChart data={categoryStockData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <RTooltip content={<CategoryTooltip />} />
-              <Bar dataKey="quantity" fill="var(--color-quantity, #3b82f6)" />
-            </BarChart>
-          </ChartContainer>
-        </div>
       </div>
 
       <div className="mb-6">

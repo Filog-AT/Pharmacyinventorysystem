@@ -826,22 +826,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         </div>
       </div>
       
-      {/* Search */}
-      <div className="bg-card rounded-lg border p-4 mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search medicines..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
-          />
-        </div>
-      </div>
-
       {/* Clean Top Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <StatsCard
           title="Total Medicines"
           value={stats.totalMedicines}
@@ -857,6 +843,13 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           onClick={() => setStatusModal({ open: true, type: 'low' })}
         />
         <StatsCard
+          title="Out of Stock"
+          value={outOfStockMeds.length}
+          icon={XCircle}
+          color="bg-red-100 text-red-800 border-red-200"
+          onClick={() => setStatusModal({ open: true, type: 'out' })}
+        />
+        <StatsCard
           title="Expiring Soon"
           value={expiringSoonItems.length}
           icon={Calendar}
@@ -864,11 +857,11 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           onClick={() => setStatusModal({ open: true, type: 'soon', window: statusModal.window })}
         />
         <StatsCard
-          title="Out of Stock"
-          value={outOfStockMeds.length}
+          title="Expired"
+          value={stats.expired}
           icon={XCircle}
-          color="bg-red-100 text-red-800 border-red-200"
-          onClick={() => setStatusModal({ open: true, type: 'out' })}
+          color="bg-rose-100 text-rose-800 border-rose-200"
+          onClick={() => setStatusModal({ open: true, type: 'expired' })}
         />
         <StatsCard
           title="Today’s Sales (₱)"
@@ -948,58 +941,60 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-card rounded-lg border p-4">
-          <PrescriptiveRecommendations medicines={medicines} />
-        </div>
-        <div className="bg-card rounded-lg border p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold">Stock Status</h3>
             <span className="text-xs text-muted-foreground">Window: {expSoonDays}d</span>
           </div>
           <div className="flex flex-col items-center">
-            <div className="w-full max-w-xs">
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={[
-                      { name: 'Normal Stock', value: stockStatusCounts.normal, color: '#22c55e' },
-                      { name: 'Low Stock', value: stockStatusCounts.low, color: '#f59e0b' },
-                      { name: 'Expiring Soon', value: stockStatusCounts.expSoon, color: '#3b82f6' },
-                      { name: 'Expired', value: stockStatusCounts.expired, color: '#ef4444' },
-                    ]}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={60}
-                    outerRadius={90}
-                    paddingAngle={2}
-                  >
-                    <Cell fill="#22c55e" />
-                    <Cell fill="#f59e0b" />
-                    <Cell fill="#3b82f6" />
-                    <Cell fill="#ef4444" />
-                  </Pie>
-                  <RTooltip />
-                </PieChart>
+            <div className="w-full">
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart
+                  data={[
+                    { name: 'Normal', value: stockStatusCounts.normal, color: '#22c55e' },
+                    { name: 'Low', value: stockStatusCounts.low, color: '#f59e0b' },
+                    { name: 'Soon', value: stockStatusCounts.expSoon, color: '#3b82f6' },
+                    { name: 'Expired', value: stockStatusCounts.expired, color: '#ef4444' },
+                  ]}
+                  margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis fontSize={12} tickLine={false} axisLine={false} />
+                  <RTooltip cursor={{ fill: 'transparent' }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {
+                      [
+                        { name: 'Normal', color: '#22c55e' },
+                        { name: 'Low', color: '#f59e0b' },
+                        { name: 'Soon', color: '#3b82f6' },
+                        { name: 'Expired', color: '#ef4444' }
+                      ].map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))
+                    }
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="grid grid-cols-2 gap-3 w-full max-w-sm mt-4">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-2 w-full max-w-sm mt-4 px-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#22c55e' }}></span>
-                  <span className="text-sm">Normal Stock</span>
+                  <span className="text-sm">Normal</span>
                 </div>
                 <span className="text-sm font-semibold">{stockStatusCounts.normal}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#f59e0b' }}></span>
-                  <span className="text-sm">Low Stock</span>
+                  <span className="text-sm">Low</span>
                 </div>
                 <span className="text-sm font-semibold">{stockStatusCounts.low}</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#3b82f6' }}></span>
-                  <span className="text-sm">Expiring Soon</span>
+                  <span className="text-sm">Soon</span>
                 </div>
                 <span className="text-sm font-semibold">{stockStatusCounts.expSoon}</span>
               </div>
@@ -1044,12 +1039,13 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           >
             <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
               <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold">
-                  {statusModal.type === 'low' && 'Low Stock Items'}
-                  {statusModal.type === 'soon' && 'Expiring Soon Batches'}
-                  {statusModal.type === 'out' && 'Out of Stock Items'}
-                  {statusModal.type === 'total' && 'Top Stocked Medicines'}
-                </h2>
+                  <h2 className="text-xl font-semibold">
+                    {statusModal.type === 'low' && 'Low Stock Items'}
+                    {statusModal.type === 'soon' && 'Expiring Soon Batches'}
+                    {statusModal.type === 'out' && 'Out of Stock Items'}
+                    {statusModal.type === 'total' && 'Top Stocked Medicines'}
+                    {statusModal.type === 'expired' && 'Expired Batches'}
+                  </h2>
                 {statusModal.type === 'soon' && (
                   <select
                     value={statusModal.window}
@@ -1161,6 +1157,51 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       </tbody>
                     </table>
                   )}
+                </div>
+              )}
+              {statusModal.type === 'expired' && (
+                <div className="space-y-2">
+                  {(() => {
+                    const today = new Date();
+                    const expiredItems = [];
+                    medicines.forEach(m => {
+                      (m.batches || []).forEach(b => {
+                        const d = new Date(b.expiryDate);
+                        if (d < today && Number(b.quantity || 0) > 0) {
+                          expiredItems.push({ medId: m.id, medName: m.name, batchNumber: b.batchNumber, expiryDate: b.expiryDate, quantity: b.quantity });
+                        }
+                      });
+                    });
+                    if (expiredItems.length === 0) return <div className="text-sm text-muted-foreground">No expired items found.</div>;
+                    return (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-muted-foreground">
+                            <th className="text-left p-2">Medicine</th>
+                            <th className="text-left p-2">Batch</th>
+                            <th className="text-right p-2">Qty</th>
+                            <th className="text-left p-2">Expiry</th>
+                            <th className="text-right p-2">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expiredItems.map((it, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="p-2">{it.medName}</td>
+                              <td className="p-2">{it.batchNumber}</td>
+                              <td className="p-2 text-right">{it.quantity}</td>
+                              <td className="p-2 text-red-600 font-medium">{it.expiryDate}</td>
+                              <td className="p-2 text-right">
+                                <button onClick={() => openViewBatches(it.medId)} className="px-2 py-1 border rounded-md text-sm hover:bg-blue-50 text-blue-700">
+                                  View Batches
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
               )}
               {statusModal.type === 'total' && (

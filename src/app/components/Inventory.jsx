@@ -75,7 +75,7 @@ export function Inventory({
     if (totalQuantity <= 0) return { label: 'Out of Stock', color: 'bg-rose-100 text-rose-700 border-rose-200 shadow-sm ring-1 ring-rose-400/20' };
     const effectiveMin = Math.max(50, Number(minStockLevel || 0));
     if (totalQuantity <= effectiveMin) return { label: 'Low Stock', color: 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm ring-1 ring-amber-400/20' };
-    return { label: 'Healthy', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    return { label: 'Normal Stock', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
   };
 
   const filteredMedicines = useMemo(() => {
@@ -326,7 +326,16 @@ export function Inventory({
                   className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background"
                 />
               </div>
-              {/* Category dropdown removed per request */}
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
+              >
+                <option value="All">All Categories</option>
+                {safeCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
             </>
           )}
         </div>

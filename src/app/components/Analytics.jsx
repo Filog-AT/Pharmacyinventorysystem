@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Tooltip as RTooltip } from 'recharts';
-import { SalesByMedicineStats } from '@/app/components/SalesByMedicineStats';
+import { PrescriptiveRecommendations } from '@/app/components/PrescriptiveRecommendations';
 
 export function Analytics({ medicines = [], categories = [] }) {
   const [receipts, setReceipts] = useState([]);
-  const [timeScale, setTimeScale] = useState('day'); // day|week|month
+  const [timeScale, setTimeScale] = useState('month'); // weekly|month|yearly
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
@@ -14,6 +14,151 @@ export function Analytics({ medicines = [], categories = [] }) {
   const [selectedMedicineId, setSelectedMedicineId] = useState('');
   const [selectedSeries, setSelectedSeries] = useState([]);
   const [forecastData, setForecastData] = useState({ dailyUsage: 0, predicted30: 0, daysRemaining: null, stockoutDate: null, reorderPoint: 0 });
+
+  const revenueData = useMemo(() => {
+    const now = new Date();
+    const data = [];
+    const totals = new Map();
+    const counts = new Map();
+
+    if (timeScale === 'weekly') {
+      // Last 12 weeks
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i * 7);
+        const day = d.getDay() || 7;
+        d.setDate(d.getDate() - (day - 1)); // Monday
+        const key = d.toISOString().slice(0, 10);
+        data.push({ key, label: `Wk ${d.getMonth() + 1}/${d.getDate()}` });
+        totals.set(key, 0);
+        counts.set(key, 0);
+      }
+      receipts.forEach(r => {
+        const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+        const day = ts.getDay() || 7;
+        const d = new Date(ts);
+        d.setDate(d.getDate() - (day - 1));
+        d.setHours(0, 0, 0, 0);
+        const k = d.toISOString().slice(0, 10);
+        if (totals.has(k)) {
+          totals.set(k, totals.get(k) + Number(r.grandTotal || 0));
+          counts.set(k, counts.get(k) + 1);
+        }
+      });
+    } else if (timeScale === 'yearly') {
+      // Last 5 years
+      for (let i = 4; i >= 0; i--) {
+        const year = now.getFullYear() - i;
+        const key = String(year);
+        data.push({ key, label: key });
+        totals.set(key, 0);
+        counts.set(key, 0);
+      }
+      receipts.forEach(r => {
+        const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+        const k = String(ts.getFullYear());
+        if (totals.has(k)) {
+          totals.set(k, totals.get(k) + Number(r.grandTotal || 0));
+          counts.set(k, counts.get(k) + 1);
+        }
+      });
+    } else {
+      // Monthly (default) - Last 12 months
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        data.push({ key, label: d.toLocaleString(undefined, { month: 'short' }) });
+        totals.set(key, 0);
+        counts.set(key, 0);
+      }
+      receipts.forEach(r => {
+        const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+        const k = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
+        if (totals.has(k)) {
+          totals.set(k, totals.get(k) + Number(r.grandTotal || 0));
+          counts.set(k, counts.get(k) + 1);
+        }
+      });
+    }
+
+    return data.map(d => ({ 
+      label: d.label, 
+      total: totals.get(d.key) || 0,
+      transactions: counts.get(d.key) || 0
+    }));
+  }, [receipts, timeScale]);
+
+  const topBottomSold = useMemo(() => {
+    const medSales = new Map();
+    receipts.forEach(r => {
+      if (Array.isArray(r.items)) {
+        r.items.forEach(it => {
+          const qty = Number(it.quantity || 0);
+          medSales.set(it.medicineId, (medSales.get(it.medicineId) || 0) + qty);
+        });
+      }
+    });
+
+    const sorted = medicines.map(m => ({
+      name: m.name,
+      sales: medSales.get(m.id) || 0
+    })).sort((a, b) => b.sales - a.sales);
+
+    return {
+      top10: sorted.slice(0, 10),
+      bottom10: sorted.filter(m => m.sales >= 0).reverse().slice(0, 10)
+    };
+  }, [receipts, medicines]);
+
+  const demandPrediction = useMemo(() => {
+    // Simple season-based demand prediction logic
+    const month = new Date().getMonth();
+    const data = medicines.map(m => {
+      let demand = 50;
+      const cat = (m.category || '').toLowerCase();
+      const sales = receipts.reduce((acc, r) => {
+        if (!Array.isArray(r.items)) return acc;
+        return acc + r.items.filter(it => it.medicineId === m.id).reduce((s, it) => s + Number(it.quantity || 0), 0);
+      }, 0);
+      
+      demand += Math.min(30, sales * 0.5);
+
+      if (month >= 5 && month <= 9) { // Rainy/Flu season
+        if (cat.includes('antibiotic') || cat.includes('cough') || cat.includes('cold')) demand += 20;
+      } else { // Summer/Dry
+        if (cat.includes('vitamin') || cat.includes('supplement') || cat.includes('dermatological')) demand += 15;
+      }
+
+      return { name: m.name, demand: Math.min(100, Math.round(demand)) };
+    }).sort((a, b) => b.demand - a.demand).slice(0, 10);
+
+    // Add timeline projection
+    const timeline = [];
+    const now = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const label = d.toLocaleString(undefined, { month: 'long' }); // Full month name
+      const m = d.getMonth();
+      let factor = 1.0;
+      let reason = 'Stable Demand';
+      
+      if (m >= 5 && m <= 9) {
+        factor = 1.3;
+        reason = 'Rainy Season (Flu/Cold spike)';
+      } else if (m === 11 || m <= 1) {
+        factor = 1.2;
+        reason = 'Holiday Season (Respiratory/Cough)';
+      } else if (m >= 2 && m <= 4) {
+        factor = 1.1;
+        reason = 'Summer Season (Vitamins/Dermatological)';
+      }
+      
+      timeline.push({ label, factor, reason, shortLabel: d.toLocaleString(undefined, { month: 'short' }) });
+    }
+
+    return { data, timeline };
+  }, [medicines, receipts]);
+
   const CategoryTooltip = ({ active, payload }) => {
     if (!active || !payload || payload.length === 0) return null;
     const cat = payload[0]?.name || payload[0]?.payload?.name;
@@ -309,39 +454,129 @@ export function Analytics({ medicines = [], categories = [] }) {
         <p className="text-sm text-muted-foreground">Reporting and data analysis</p>
       </div>
 
+      {/* Prescriptive Recommendations Section */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold">Recommendations</h2>
+        <div className="bg-white rounded-lg border p-4">
+          <PrescriptiveRecommendations medicines={medicines} />
+        </div>
+      </section>
+
       {/* Usage & Sales Summary */}
       <section className="space-y-4">
         <h2 className="text-xl font-semibold">Usage & Sales Summary</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg border p-4">
-            <h3 className="font-medium mb-3">Revenue Trend (Monthly)</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium">Revenue Trend</h3>
+              <div className="flex bg-gray-100 p-1 rounded-md">
+                <button
+                  onClick={() => setTimeScale('weekly')}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${timeScale === 'weekly' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Weekly
+                </button>
+                <button
+                  onClick={() => setTimeScale('month')}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${timeScale === 'month' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Monthly
+                </button>
+                <button
+                  onClick={() => setTimeScale('yearly')}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${timeScale === 'yearly' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Yearly
+                </button>
+              </div>
+            </div>
             <ChartContainer
-              config={{ total: { label: 'Revenue', color: '#3b82f6' } }}
+              config={{ 
+                total: { label: 'Revenue', color: '#3b82f6' },
+                transactions: { label: 'Transactions', color: '#10b981' }
+              }}
               className="aspect-[16/9]"
             >
-              <LineChart data={monthlyRevenue}>
+              <BarChart data={revenueData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis fontSize={12} tickLine={false} axisLine={false} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Line type="monotone" dataKey="total" stroke="var(--color-total, #3b82f6)" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ChartContainer>
-          </div>
-          <div className="bg-white rounded-lg border p-4">
-            <h3 className="font-medium mb-3">Sales Volume (Monthly)</h3>
-            <ChartContainer
-              config={{ count: { label: 'Transactions', color: '#10b981' } }}
-              className="aspect-[16/9]"
-            >
-              <BarChart data={monthlyCounts}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="count" fill="var(--color-count, #10b981)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="total" fill="var(--color-total, #3b82f6)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ChartContainer>
+          </div>
+          
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-medium mb-3">Demand Prediction</h3>
+            <div className="space-y-4">
+              <ChartContainer
+                config={{ demand: { label: 'Demand Level', color: '#8b5cf6' } }}
+                className="aspect-[21/9]"
+              >
+                <BarChart data={demandPrediction.data}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} interval={0} angle={-45} textAnchor="end" height={60} />
+                  <YAxis fontSize={12} tickLine={false} axisLine={false} domain={[0, 100]} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="demand" fill="var(--color-demand, #8b5cf6)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+              
+              <div className="pt-2 border-t">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Demand Timeline (Projection)</p>
+                <div className="flex items-end justify-between h-16 gap-1">
+                  {demandPrediction.timeline.map((t, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center group relative">
+                      <div 
+                        className={`w-full rounded-t-sm transition-all duration-500 ${t.factor > 1.2 ? 'bg-rose-400' : 'bg-blue-400'}`} 
+                        style={{ height: `${t.factor * 35}%` }}
+                      ></div>
+                      <span className="text-[8px] mt-1 text-gray-500 font-medium">{t.shortLabel}</span>
+                      
+                      {/* Hover reason tooltip */}
+                      <div className="absolute bottom-full mb-2 hidden group-hover:block z-50 bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg min-w-[150px]">
+                        <div className="font-bold border-b border-white/20 mb-1">{t.label}</div>
+                        <div className="whitespace-normal leading-tight">{t.reason}</div>
+                        <div className="text-gray-400 mt-1">Factor: x{t.factor.toFixed(1)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-medium mb-3 text-emerald-700 text-sm">Most Sold Medicines</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topBottomSold.top10} layout="vertical" margin={{ left: 10, right: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" fontSize={9} width={90} tick={{fill: '#4b5563'}} />
+                  <RTooltip />
+                  <Bar dataKey="sales" fill="#10b981" radius={[0, 4, 4, 0]} barSize={12} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border p-4">
+            <h3 className="font-medium mb-3 text-rose-700 text-sm">Least Sold Medicines</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topBottomSold.bottom10} layout="vertical" margin={{ left: 10, right: 30 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" fontSize={9} width={90} tick={{fill: '#4b5563'}} />
+                  <RTooltip />
+                  <Bar dataKey="sales" fill="#f43f5e" radius={[0, 4, 4, 0]} barSize={12} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </section>
