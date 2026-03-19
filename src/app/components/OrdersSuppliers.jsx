@@ -3,7 +3,8 @@ import { Plus, Pencil, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { orderService } from '@/services/orderService';
 import { supplierService } from '@/services/supplierService';
 import { ChartContainer } from '@/app/components/ui/chart';
- 
+import * as ordersSuppliersBackend from '@/backend/ordersSuppliersBackend';
+
 export function OrdersSuppliers() {
   const [orders, setOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -45,10 +46,12 @@ export function OrdersSuppliers() {
   }, []);
  
   const statusBadge = (status) => {
-    const base = 'px-2 py-1 rounded text-xs font-medium';
-    if (status === 'Completed') return <span className={`${base} bg-green-100 text-green-700`}>Completed</span>;
-    if (status === 'Cancelled') return <span className={`${base} bg-red-100 text-red-700`}>Cancelled</span>;
-    return <span className={`${base} bg-yellow-100 text-yellow-800`}>Pending</span>;
+    const config = ordersSuppliersBackend.getStatusBadgeConfig(status);
+    return <span className={config.className}>{config.label}</span>;
+  };
+
+  const formatOrderStatusDate = (date) => {
+    return ordersSuppliersBackend.formatOrderStatusDate(date);
   };
  
   const handleSetOrderStatus = async (order, status) => {
@@ -138,7 +141,7 @@ export function OrdersSuppliers() {
                   <td className="p-3">{statusBadge(o.status)}</td>
                   <td className="p-3">{o.date}</td>
                   <td className="p-3">
-                    {o.status === 'Completed' && o.deliveredOn ? new Date(o.deliveredOn).toLocaleString() : o.status === 'Cancelled' && o.cancelledOn ? new Date(o.cancelledOn).toLocaleString() : ''}
+                    {o.status === 'Completed' && o.deliveredOn ? formatOrderStatusDate(o.deliveredOn) : o.status === 'Cancelled' && o.cancelledOn ? formatOrderStatusDate(o.cancelledOn) : ''}
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">

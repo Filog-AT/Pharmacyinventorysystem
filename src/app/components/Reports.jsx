@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, DollarSign, Package, ShoppingCart } from 'lucide-react';
+import * as reportsBackend from '@/backend/reportsBackend';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
@@ -22,37 +23,17 @@ export function Reports({ medicines }) {
 
   // Process sales data for the trend chart
   const salesTrendData = useMemo(() => {
-    const groups = {};
-    receipts.forEach(r => {
-      const date = r.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      const month = date.toLocaleString('default', { month: 'short' });
-      if (!groups[month]) groups[month] = { month, revenue: 0, sales: 0 };
-      groups[month].revenue += (r.grandTotal || 0);
-      groups[month].sales += 1;
-    });
-    
-    // Last 7 months logic could be added here, but for now just take what we have
-    return Object.values(groups).reverse(); // reverse to get chronological if needed
+    return reportsBackend.getSalesTrendData(receipts);
   }, [receipts]);
 
-  const categoryData = medicines.reduce((acc, med) => {
-    const category = med.category || 'Uncategorized';
-    const existing = acc.find(item => item.name === category);
-    if (existing) {
-      existing.value += (med.totalQuantity || 0);
-    } else {
-      acc.push({ name: category, value: (med.totalQuantity || 0) });
-    }
-    return acc;
-  }, []);
+  const categoryData = useMemo(() => {
+    return reportsBackend.getCategoryData(medicines);
+  }, [medicines]);
 
   // Calculate real metrics from medicines and receipts
-  const totalRevenue = useMemo(() => {
-    return receipts.reduce((sum, r) => sum + (r.grandTotal || 0), 0);
+  const { totalRevenue, totalSales, avgOrderValue } = useMemo(() => {
+    return reportsBackend.calculateMetrics(receipts);
   }, [receipts]);
-
-  const totalSales = receipts.length;
-  const avgOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0;
 
   return (
     <div>

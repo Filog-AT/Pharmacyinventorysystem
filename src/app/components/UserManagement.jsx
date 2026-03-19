@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit, Trash2, Search, Shield } from 'lucide-react';
 import { auditService } from '@/services/auditService';
+import * as userManagementBackend from '@/backend/userManagementBackend';
 
 export function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -20,26 +21,16 @@ export function UserManagement({ currentUser }) {
     role: 'staff',
   });
 
-  const roles = [
-    { id: 'owner', label: 'Owner', color: 'bg-red-100 text-red-700' },
-    { id: 'pharmacist', label: 'Pharmacist', color: 'bg-blue-100 text-blue-700' },
-    { id: 'staff', label: 'Staff', color: 'bg-green-100 text-green-700' },
-  ];
+  const roles = userManagementBackend.ROLES;
 
   // Mock loading users - replace with actual Firebase call later
   useEffect(() => {
     // For now, just show this UI structure
     setUsers([]);
-    setFilteredUsers([]);
   }, []);
 
-  useEffect(() => {
-    const filtered = users.filter(user =>
-      (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.email || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredUsers(filtered);
+  const filteredUsers = useMemo(() => {
+    return userManagementBackend.filterUsers(users, searchTerm);
   }, [searchTerm, users]);
 
   const handleAddUser = async (e) => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Search, Plus, Minus, ShoppingCart, X } from 'lucide-react';
 import { auditService } from '@/services/auditService';
 import { medicineService } from '@/services/medicineService';
+import * as salesBackend from '@/backend/salesBackend';
 
 export function SalesPOS({ medicines, currentUser }) {
   const [cart, setCart] = useState([]);
@@ -23,48 +24,19 @@ export function SalesPOS({ medicines, currentUser }) {
   };
 
   const getUnitMultiplier = (m, unit) => {
-    // Get multipliers from the first batch if available, otherwise default to 1
-    let blistersPerBox = 1;
-    let unitsPerBlister = 1;
-
-    if (Array.isArray(m.batches) && m.batches.length > 0) {
-      const b = m.batches[0];
-      blistersPerBox = Number(b?.blistersPerBox || 1);
-      unitsPerBlister = Number(b?.unitsPerBlister || 1);
-    }
-
-    if (unit === 'blister') {
-      return unitsPerBlister;
-    }
-    if (unit === 'box') {
-      return blistersPerBox * unitsPerBlister;
-    }
-    return 1; // 'piece' or 'unit'
+    return salesBackend.getUnitMultiplier(m, unit);
   };
 
   const getTabletCount = (m) => {
-    if (Array.isArray(m.batches) && m.batches.length > 0) {
-      const today = new Date();
-      const validBatch = m.batches.find(b => new Date(b.expiryDate) >= today && b.quantity > 0) || m.batches[0];
-      return Number(validBatch?.unitsPerBlister || 0);
-    }
-    return 0;
+    return salesBackend.getTabletCount(m);
   };
 
   const getBoxTabletCount = (m) => {
-    if (Array.isArray(m.batches) && m.batches.length > 0) {
-      const today = new Date();
-      const validBatch = m.batches.find(b => new Date(b.expiryDate) >= today && b.quantity > 0) || m.batches[0];
-      return Number(validBatch?.blistersPerBox || 0) * Number(validBatch?.unitsPerBlister || 0);
-    }
-    return 0;
+    return salesBackend.getBoxTabletCount(m);
   };
 
   const getMaxSaleQuantity = (m, unit) => {
-    const available = Number(m.totalQuantity || 0);
-    const mult = getUnitMultiplier(m, unit);
-    if (mult <= 0) return 0;
-    return Math.floor(available / mult);
+    return salesBackend.getMaxSaleQuantity(m, unit);
   };
 
   const addToCart = (medicine) => {

@@ -332,24 +332,58 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                     };
                     const vatRate = 0.12;
                     let created = 0;
+                    
+                    // Group medicines by category for realistic bundles
+                    const byCategory = medicines.reduce((acc, m) => {
+                      const cat = m.category || 'General';
+                      if (!acc[cat]) acc[cat] = [];
+                      acc[cat].push(m);
+                      return acc;
+                    }, {});
+
                     for (let i = 0; i < targetCount; i++) {
-                      const itemsCount = Math.max(1, Math.floor(Math.random() * 4));
+                      const itemsCount = Math.max(1, Math.floor(Math.random() * 5));
                       const chosen = [];
-                      const shuffled = medicines.slice().sort(() => Math.random() - 0.5);
+                      
+                      // 70% chance to pick from same category (realistic prescription/bundle)
+                      const useCategoryBundle = Math.random() < 0.7;
+                      const categories = Object.keys(byCategory);
+                      const randomCat = categories[Math.floor(Math.random() * categories.length)];
+                      const pool = useCategoryBundle ? byCategory[randomCat] : medicines;
+                      
+                      const shuffled = pool.slice().sort(() => Math.random() - 0.5);
                       for (let j = 0; j < itemsCount && j < shuffled.length; j++) {
                         const m = shuffled[j];
                         const unit = pickUnit(m);
                         const mult = unitMultiplier(m, unit);
+                        
+                        // Realistic quantities: 1-10 for units, 1-2 for boxes/blisters
+                        let qty = 1;
+                        if (unit === 'piece') qty = Math.floor(Math.random() * 10) + 1;
+                        else qty = Math.floor(Math.random() * 2) + 1;
+                        
                         const maxQ = mult > 0 ? Math.max(1, Math.floor((Number(m.totalQuantity || 0) || 50) / mult)) : 1;
-                        const qty = Math.max(1, Math.min(maxQ, Math.floor(Math.random() * 5) + 1));
-                        chosen.push({ m, unit, mult, qty });
+                        qty = Math.min(qty, maxQ);
+                        
+                        if (qty > 0) chosen.push({ m, unit, mult, qty });
                       }
+
+                      if (chosen.length === 0) continue;
+
                       const now = new Date();
+                      // Realistic time distribution: 
+                      // 40% Morning (9-12), 40% Afternoon (1-5), 20% Evening (6-9)
+                      const timeRand = Math.random();
+                      let hour = 9;
+                      if (timeRand < 0.4) hour = 9 + Math.floor(Math.random() * 4);
+                      else if (timeRand < 0.8) hour = 13 + Math.floor(Math.random() * 5);
+                      else hour = 18 + Math.floor(Math.random() * 4);
+
                       let ts = new Date(
                         now.getFullYear(),
                         now.getMonth() - Math.floor(Math.random() * demoMonths),
                         Math.max(1, Math.floor(Math.random() * 28)),
-                        Math.floor(Math.random() * 10) + 9,
+                        hour,
                         Math.floor(Math.random() * 60)
                       );
                       if (ts > now) {

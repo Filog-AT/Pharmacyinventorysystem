@@ -175,7 +175,8 @@ function AppSimple() {
         }
         const firebaseCategories = await services.categoryService.getCategories();
         if (firebaseCategories && firebaseCategories.length > 0) {
-          setCategories(firebaseCategories.map((c: any) => c.name));
+          const uniqueNames = [...new Set(firebaseCategories.map((c: any) => c.name).filter(Boolean))];
+          setCategories(uniqueNames as string[]);
         } else {
           const defaults = [
             'Antibiotic','Painkiller','Antiviral','Antihistamine','Cardiovascular','Diabetes','Respiratory','Gastrointestinal','Dermatological','Vitamins & Supplements'
@@ -184,7 +185,8 @@ function AppSimple() {
             try { await services.categoryService.addCategory(name); } catch {}
           }
           const populated = await services.categoryService.getCategories();
-          setCategories(populated.map((c: any) => c.name));
+          const uniquePopulated = [...new Set(populated.map((c: any) => c.name).filter(Boolean))];
+          setCategories(uniquePopulated as string[]);
         }
       } catch (error) {
         console.warn('[AppSimple] Failed to sync categories:', error);

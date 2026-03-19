@@ -2,6 +2,7 @@ import { X, Trash2, Calendar, Package, Tag, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar, Cell } from 'recharts';
 import { medicineService } from '@/services/medicineService';
+import * as viewBatchesBackend from '@/backend/viewBatchesBackend';
 
 export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch, onUpdateBatch }) {
   const [editingBatch, setEditingBatch] = useState(null);
@@ -36,32 +37,11 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
 
   const today = new Date();
   const formatDateLabel = (d) => {
-    const dt = new Date(d);
-    return `${dt.getMonth() + 1}/${dt.getDate()}`;
+    return viewBatchesBackend.formatDateLabel(d);
   };
 
   const buildLast30DaysSeries = (records) => {
-    const series = [];
-    const map = new Map();
-    (records || []).forEach(r => {
-      const d = r?.date_sold && typeof r.date_sold.toDate === 'function' ? r.date_sold.toDate() : new Date(r.date_sold);
-      const key = new Date(d);
-      key.setHours(0, 0, 0, 0);
-      const kStr = key.toISOString();
-      const prev = map.get(kStr) || 0;
-      map.set(kStr, prev + Number(r.quantity_sold || 0));
-    });
-    const start = new Date();
-    start.setDate(start.getDate() - 29);
-    start.setHours(0, 0, 0, 0);
-    for (let i = 0; i < 30; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      const kStr = new Date(d).toISOString();
-      const units = map.get(kStr) || 0;
-      series.push({ date: new Date(d), label: formatDateLabel(d), units });
-    }
-    return series;
+    return viewBatchesBackend.buildLast30DaysSeries(records, formatDateLabel);
   };
 
   useEffect(() => {
@@ -73,22 +53,9 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
         if (!mounted) return;
         const series = buildLast30DaysSeries(records);
         setSalesSeries(series);
-        const totalLast30 = series.reduce((sum, d) => sum + (Number(d.units) || 0), 0);
-        const dailyUsage = totalLast30 / 30;
-        const predicted30 = dailyUsage * 30;
         const currentStock = Number(medicine.totalQuantity || 0);
-        const daysRemaining = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : null;
-        const stockoutDate = daysRemaining != null ? new Date(today.getTime() + daysRemaining * 24 * 60 * 60 * 1000) : null;
-        const reorderPoint = dailyUsage * 10;
-        const reorderAlert = dailyUsage > 0 ? currentStock <= reorderPoint : false;
-        setForecast({
-          dailyUsage,
-          predicted30,
-          daysRemaining,
-          stockoutDate,
-          reorderPoint,
-          reorderAlert,
-        });
+        const forecastResult = viewBatchesBackend.calculateForecast(series, currentStock, today);
+        setForecast(forecastResult);
       } catch (e) {
         setSalesSeries([]);
         setForecast({
@@ -107,15 +74,7 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
   }, [medicine?.id]);
   
   const getBatchStatus = (expiryDate, quantity) => {
-    const exp = new Date(expiryDate);
-    const isExpired = exp < today;
-    const daysUntilExpiry = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    const isSoon = daysUntilExpiry <= 90 && daysUntilExpiry > 0;
-
-    if (isExpired) return { label: 'Expired', color: 'bg-rose-100 text-rose-700 border-rose-200 shadow-sm ring-1 ring-rose-400/20' };
-    if (isSoon) return { label: 'Expiring Soon', color: 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm ring-1 ring-amber-400/20' };
-    if (quantity === 0) return { label: 'Out of Stock', color: 'bg-gray-100 text-gray-700 border-gray-200' };
-    return { label: 'Healthy', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    return viewBatchesBackend.getBatchStatus(expiryDate, quantity, today);
   };
 
   const handleEditClick = (batch) => {

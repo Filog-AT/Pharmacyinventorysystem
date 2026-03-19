@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2 } from 'lucide-react';
+import * as customersBackend from '@/backend/customersBackend';
 
 const mockCustomers = [
   {
@@ -36,15 +37,16 @@ export function Customers() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const filteredCustomers = customers.filter(customer =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone.includes(searchTerm)
-  );
+  const filteredCustomers = useMemo(() => {
+    return customersBackend.filterCustomers(customers, searchTerm);
+  }, [customers, searchTerm]);
+
+  const stats = useMemo(() => {
+    return customersBackend.calculateCustomerStats(customers);
+  }, [customers]);
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    return customersBackend.formatDate(dateString);
   };
 
   return (
@@ -68,18 +70,18 @@ export function Customers() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-blue-100 border-2 border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-800 mb-1">Total Customers</p>
-          <p className="text-2xl font-bold text-blue-900">{customers.length}</p>
+          <p className="text-2xl font-bold text-blue-900">{stats.totalCustomers}</p>
         </div>
         <div className="bg-green-100 border-2 border-green-200 rounded-lg p-4">
           <p className="text-sm text-green-800 mb-1">Total Revenue</p>
           <p className="text-2xl font-bold text-green-900">
-            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(customers.reduce((sum, c) => sum + c.totalPurchases, 0))}
+            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(stats.totalRevenue)}
           </p>
         </div>
         <div className="bg-purple-100 border-2 border-purple-200 rounded-lg p-4">
           <p className="text-sm text-purple-800 mb-1">Average Purchase</p>
           <p className="text-2xl font-bold text-purple-900">
-            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(customers.reduce((sum, c) => sum + c.totalPurchases, 0) / customers.length)}
+            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(stats.averagePurchase)}
           </p>
         </div>
       </div>

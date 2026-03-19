@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Calculator } from 'lucide-react';
+import * as addStockBackend from '@/backend/addStockBackend';
 
 export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }) {
   const [formData, setFormData] = useState({
@@ -24,7 +25,7 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const total = (formData.boxesReceived || 0) * (formData.blistersPerBox || 1) * (formData.unitsPerBlister || 1);
+    const total = addStockBackend.calculateTotalUnits(formData.boxesReceived, formData.blistersPerBox, formData.unitsPerBlister);
     setTotalUnits(total);
   }, [formData.boxesReceived, formData.blistersPerBox, formData.unitsPerBlister]);
 
@@ -38,8 +39,9 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.medicineId) {
-      alert('Please select a medicine');
+    const error = addStockBackend.validateFormData(formData);
+    if (error) {
+      alert(error);
       return;
     }
     
@@ -47,11 +49,6 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
     const boxes = Number(formData.boxesReceived || 0);
     const blisters = Number(formData.blistersPerBox || 1);
     const units = Number(formData.unitsPerBlister || 1);
-
-    if (boxes <= 0) {
-      alert('Boxes received must be greater than 0');
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -70,13 +67,7 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
   };
 
   const selectedMedicine = medicines.find(m => m.id === formData.medicineId);
-  const isBottle = (() => {
-    const form = String(selectedMedicine?.dosageForm || '').toLowerCase().trim();
-    const unit = String(selectedMedicine?.unit || '').toLowerCase().trim();
-    const bottleForms = new Set(['bottle']);
-    const bottleUnits = new Set(['bottle', 'bottles']);
-    return bottleForms.has(form) || bottleUnits.has(unit);
-  })();
+  const isBottle = addStockBackend.isBottle(selectedMedicine);
 
   useEffect(() => {
     if (isBottle) {

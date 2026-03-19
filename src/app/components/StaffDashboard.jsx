@@ -3,6 +3,7 @@ import { Search, Package } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
 import { SalesByMedicineStats } from '@/app/components/SalesByMedicineStats';
+import * as staffDashboardBackend from '@/backend/staffDashboardBackend';
 
 export function StaffDashboard({ medicines = [] }) {
   const [receipts, setReceipts] = useState([]);
@@ -30,68 +31,16 @@ export function StaffDashboard({ medicines = [] }) {
     })();
   }, []);
 
-  const todaySales = useMemo(() => {
-    const now = new Date();
-    return (receipts || []).reduce((sum, r) => {
-      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      if (ts.toDateString() === now.toDateString()) {
-        return sum + (r.grandTotal || r.subtotal || 0);
-      }
-      return sum;
-    }, 0);
-  }, [receipts]);
-
-  const todayUnitsSold = useMemo(() => {
-    const now = new Date();
-    return (receipts || []).reduce((sum, r) => {
-      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      if (ts.toDateString() === now.toDateString() && Array.isArray(r.items)) {
-        return sum + r.items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
-      }
-      return sum;
-    }, 0);
-  }, [receipts]);
-
-  const todayTransactions = useMemo(() => {
-    const now = new Date();
-    return (receipts || []).filter(r => {
-      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      return ts.toDateString() === now.toDateString();
-    }).length;
+  const { todaySales, todayUnitsSold, todayTransactions } = useMemo(() => {
+    return staffDashboardBackend.calculateTodayStats(receipts);
   }, [receipts]);
 
   const categoryStockData = useMemo(() => {
-    const map = new Map();
-    (medicines || []).forEach(m => {
-      const key = m.category || 'Uncategorized';
-      const prev = map.get(key) || 0;
-      map.set(key, prev + (m.totalQuantity || 0));
-    });
-    return Array.from(map.entries()).map(([name, qty]) => ({ name, quantity: qty }));
+    return staffDashboardBackend.getCategoryStockData(medicines);
   }, [medicines]);
 
   const expiringSoon = useMemo(() => {
-    const today = new Date();
-    const in30 = new Date(today.getTime() + 30 * 86400000);
-    const items = [];
-    (medicines || []).forEach(m => {
-      if (Array.isArray(m.batches)) {
-        m.batches.forEach(b => {
-          if (!b.expiryDate) return;
-          const d = new Date(b.expiryDate);
-          if (d >= today && d <= in30) {
-            items.push({
-              medId: m.id,
-              name: m.name,
-              batch: b.batchNumber || b.id,
-              expiry: d.toISOString().slice(0,10),
-            });
-          }
-        });
-      }
-    });
-    items.sort((a, b) => a.expiry.localeCompare(b.expiry));
-    return items.slice(0, 8);
+    return staffDashboardBackend.getExpiringSoon(medicines);
   }, [medicines]);
 
   const CategoryTooltip = ({ active, payload }) => {

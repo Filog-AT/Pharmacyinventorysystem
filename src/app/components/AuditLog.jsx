@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Filter, Download, Eye, EyeOff } from 'lucide-react';
 import { auditService } from '@/services/auditService';
+import * as auditBackend from '@/backend/auditBackend';
 
 const actionColors = {
   MEDICINE_ADD: { bg: 'bg-green-100', text: 'text-green-700', label: 'Medicine Added' },
@@ -39,18 +40,7 @@ export function AuditLog() {
     setLoading(true);
     try {
       const fetched = await auditService.getLogs({ limit: 200 });
-      const normalized = fetched.map(l => {
-        const ts = l.timestamp;
-        const date =
-          ts && typeof ts.toDate === 'function'
-            ? ts.toDate()
-            : ts instanceof Date
-            ? ts
-            : ts
-            ? new Date(ts)
-            : new Date();
-        return { ...l, timestamp: date };
-      });
+      const normalized = auditBackend.normalizeLogs(fetched);
       setLogs(normalized);
     } catch (error) {
       console.error('[AuditLog] Error loading logs:', error);
@@ -73,53 +63,7 @@ export function AuditLog() {
   };
 
   const filterLogs = () => {
-    // Exclude MEDICINE_SOLD and SALE_COMPLETED actions
-    let filtered = logs.filter(
-      (log) => log.action !== 'MEDICINE_SOLD' && log.action !== 'SALE_COMPLETED'
-    );
-
-    if (filters.action) {
-      filtered = filtered.filter((log) => log.action === filters.action);
-    }
-
-    if (filters.userId) {
-      filtered = filtered.filter(log => log.userId === filters.userId);
-    }
-
-    if (filters.startDate) {
-      const startDate = new Date(filters.startDate);
-      filtered = filtered.filter(log => {
-        try {
-          const logDate = log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp);
-          return logDate >= startDate;
-        } catch {
-          return false;
-        }
-      });
-    }
-
-    if (filters.endDate) {
-      const endDate = new Date(filters.endDate);
-      endDate.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(log => {
-        try {
-          const logDate = log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp);
-          return logDate <= endDate;
-        } catch {
-          return false;
-        }
-      });
-    }
-
-    if (filters.searchTerm) {
-      const term = filters.searchTerm.toLowerCase();
-      filtered = filtered.filter(log =>
-        (log.userName || '').toLowerCase().includes(term) ||
-        (log.entityName || '').toLowerCase().includes(term) ||
-        (log.details?.customerName || '').toLowerCase().includes(term)
-      );
-    }
-
+    const filtered = auditBackend.filterLogs(logs, filters);
     setFilteredLogs(filtered);
   };
 
@@ -131,32 +75,12 @@ export function AuditLog() {
   };
 
   const getTimestampString = (timestamp) => {
-    try {
-      if (!timestamp) return '';
-      const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-      return date.toLocaleString();
-    } catch {
-      return '';
-    }
+    return auditBackend.getTimestampString(timestamp);
   };
 
   const downloadCSV = () => {
-    if (filteredLogs.length === 0) return;
-    
-    const headers = ['Timestamp', 'User', 'Action', 'Entity Type', 'Entity Name', 'Details'];
-    const rows = filteredLogs.map(log => [
-      getTimestampString(log.timestamp),
-      log.userName || '',
-      (actionColors[log.action]?.label || log.action || ''),
-      log.entityType || '',
-      log.entityName || '—',
-      JSON.stringify(log.details || {}),
-    ]);
-
-    const csv = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-    ].join('\n');
+    const csv = auditBackend.generateCSV(filteredLogs, actionColors);
+    if (!csv) return;
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);

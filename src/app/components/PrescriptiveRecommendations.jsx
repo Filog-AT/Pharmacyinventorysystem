@@ -1,171 +1,226 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Lightbulb, AlertTriangle, Package, Clock } from 'lucide-react';
+import { Lightbulb, AlertTriangle, Package, TrendingUp, CheckCircle, X } from 'lucide-react';
+import * as recommendationsBackend from '@/backend/recommendationsBackend';
  
 export function PrescriptiveRecommendations({ medicines = [] }) {
-  const today = new Date();
-  const daysBetween = (dateStr) => {
-    if (!dateStr) return Infinity;
-    const d = new Date(dateStr);
-    return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  };
+  const today = useMemo(() => new Date(), []);
+  const [showAllModal, setShowAllModal] = useState(false);
  
-  const [receipts, setReceipts] = useState([]);
-
-  useEffect(() => {
-    const fetchReceipts = async () => {
-      try {
-        const { medicineService } = await import('@/services/medicineService');
-        const data = await medicineService.getSalesLastNDays(90); // Last 90 days for trend
-        setReceipts(data);
-      } catch (e) {
-        console.error('Failed to fetch sales for recommendations', e);
-      }
-    };
-    fetchReceipts();
-  }, []);
-
   const recommendations = useMemo(() => {
-    const medRecommendations = new Map();
- 
-    const addAction = (m, action) => {
-      if (!medRecommendations.has(m.id)) {
-        medRecommendations.set(m.id, {
-          id: m.id,
-          product: m.name,
-          stock: `${m.totalQuantity || 0} ${m.unit || ''}`.trim(),
-          actions: []
-        });
-      }
-      const entry = medRecommendations.get(m.id);
-      if (!entry.actions.includes(action)) {
-        entry.actions.push(action);
-      }
-    };
- 
-    for (const m of medicines) {
-      const qty = m.totalQuantity || 0;
-      const min = m.minStockLevel || 0;
-      const reorderPoint = Math.max(1, min || 10);
-      
-      // Get earliest expiry from batches
-      let earliestExpiry = null;
-      if (m.batches && m.batches.length > 0) {
-        const validBatches = m.batches.filter(b => b.expiryDate);
-        if (validBatches.length > 0) {
-          earliestExpiry = validBatches.sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime())[0].expiryDate;
-        }
-      }
-      
-      const daysToExpiry = earliestExpiry ? daysBetween(earliestExpiry) : Infinity;
-      const supplier = m.batches?.[0]?.supplier || '';
-      const price = Number(m.price || 0);
- 
-      if (qty <= 0) {
-        addAction(m, `Stock In +${Math.max(50, min || 50)} (Reorder urgently)`);
-        continue;
-      }
- 
-      if (qty <= min) {
-        addAction(m, `Reorder immediately — stock below reorder point`);
-        if (qty <= Math.ceil(reorderPoint / 3)) {
-          addAction(m, `Order emergency quantity — stock may run out in 2–3 days`);
-        }
-        const recommended = Math.ceil((min - qty) + Math.max(10, Math.round(min * 0.25)));
-        addAction(m, `Reorder +${recommended}`);
-        if (min < 20) {
-          addAction(m, `Increase min stock level to ${Math.max(20, Math.ceil(min * 1.5))}`);
-        }
-        addAction(m, `Increase reorder quantity — fast-moving medicine`);
-        if (supplier) {
-          addAction(m, `Create order with ${supplier}`);
-        }
-      }
- 
-      if (daysToExpiry <= 30 && daysToExpiry > 0) {
-        addAction(m, `Apply discount — expiring within 30 days`);
-        addAction(m, `Bundle with another product — move near-expiry stock`);
-        addAction(m, `Return to distributor/manufacturer (expires in ${daysToExpiry}d)`);
-        if (supplier) {
-          addAction(m, `Check return policy with ${supplier}`);
-        }
-      }
- 
-      if (daysToExpiry <= 0) {
-        addAction(m, `Remove from shelf (expired)`);
-        continue;
-      }
-  
-      if (qty > (min || 1) * 6) {
-        addAction(m, `Reduce next purchase order — current stock exceeds demand`);
-      }
-      if (qty > (min || 1) * 9) {
-        addAction(m, `Temporarily stop reordering — stock sufficient for 2–3 months`);
-      }
-      if (qty > (min || 1) * 3) {
-        addAction(m, `Promote high inventory item — slow-moving stock`);
-        if (price >= 500) {
-          addAction(m, `Review pricing; consider small discount to improve turnover`);
-        }
-      }
- 
-      if (qty > min && qty <= Math.ceil(min * 1.2)) {
-        addAction(m, `Prepare additional stock — demand increasing recently`);
-      } else if (qty > Math.ceil(min * 1.5) && qty <= Math.ceil(min * 3)) {
-        addAction(m, `Maintain current reorder level — usage stable`);
-      }
- 
-      if (qty <= min) {
-        const alternatives = medicines.filter(x => x.id !== m.id && (x.category || '') === (m.category || '') && Number(x.totalQuantity || 0) > Math.max(1, Number(x.minStockLevel || 0)) * 2);
-        if (alternatives.length > 0) {
-          const alt = alternatives[0];
-          addAction(m, `Suggest alternative medicine — ${alt.name} available`);
-        }
-      }
-    }
-  
-    return Array.from(medRecommendations.values()).map(r => ({
-      ...r,
-      action: r.actions.join(' • ')
-    }));
-  }, [medicines]);
+    return recommendationsBackend.getRecommendations(medicines, today);
+  }, [medicines, today]);
 
-  const top = recommendations.slice(0, 8);
- 
+  // Handle body scroll lock
+  useEffect(() => {
+    if (showAllModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [showAllModal]);
+
   return (
-    <div className="bg-card rounded-lg border p-4 mb-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Lightbulb className="w-5 h-5 text-yellow-500" />
-        <h2 className="text-lg font-semibold text-card-foreground">Prescriptive Recommendations</h2>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-muted-foreground border-b border-border/50">
-              <th className="pb-2 font-medium">Medicine</th>
-              <th className="pb-2 font-medium">Stock</th>
-              <th className="pb-2 font-medium text-right">Recommended Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {top.map((rec) => (
-              <tr key={rec.id} className="group hover:bg-muted/30 transition-colors">
-                <td className="py-3 font-medium text-foreground">{rec.product}</td>
-                <td className="py-3 text-muted-foreground">{rec.stock}</td>
-                <td className="py-3 text-right text-muted-foreground italic leading-relaxed">
-                  {rec.action}
-                </td>
-              </tr>
+    <>
+      {/* Compact Grid View */}
+      <div className="bg-card rounded-xl border-2 border-yellow-100 shadow-sm overflow-hidden flex flex-col h-[500px]">
+        <div className="p-5 bg-yellow-50/50 border-b border-yellow-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <Lightbulb className="w-6 h-6 text-yellow-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Prescriptive Recommendations</h3>
+              <p className="text-[10px] text-gray-500 font-medium">Actionable predictive insights</p>
+            </div>
+          </div>
+          <span className="bg-yellow-100 text-yellow-800 text-xs px-2.5 py-1 rounded-full font-black border border-yellow-200">{recommendations.length}</span>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recommendations.slice(0, 9).map((rec) => (
+              <div key={rec.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md ${
+                rec.priority === 'CRITICAL' ? 'border-red-200' : 
+                rec.priority === 'HIGH' ? 'border-orange-200' : 'border-blue-100'
+              }`}>
+                <div className={`p-2 border-b flex items-center justify-between ${
+                  rec.priority === 'CRITICAL' ? 'bg-red-50' : 
+                  rec.priority === 'HIGH' ? 'bg-orange-50' : 'bg-blue-50/50'
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      rec.priority === 'CRITICAL' ? 'bg-red-600 text-white' : 
+                      rec.priority === 'HIGH' ? 'bg-orange-500 text-white' : 
+                      rec.priority === 'MEDIUM' ? 'bg-blue-500 text-white' : 'bg-gray-500 text-white'
+                    }`}>
+                      {rec.priority}
+                    </span>
+                    <span className={`text-[10px] font-bold ${
+                      rec.priority === 'CRITICAL' ? 'text-red-700' : 
+                      rec.priority === 'HIGH' ? 'text-orange-700' : 'text-blue-700'
+                    }`}>
+                      {rec.status}
+                    </span>
+                  </div>
+                  <div className="text-[9px] font-bold text-gray-500">
+                    Stock: {rec.stock}
+                  </div>
+                </div>
+
+                <div className="p-3 flex-1 flex flex-col">
+                  <h3 className="font-bold text-gray-900 text-xs mb-2 flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-gray-400" />
+                    {rec.product}
+                  </h3>
+
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1">
+                        <TrendingUp className="w-2.5 h-2.5" /> Actions
+                      </p>
+                      <ul className="space-y-0.5">
+                        {rec.actions.slice(0, 1).map((action, idx) => (
+                          <li key={idx} className="text-[11px] text-gray-700 flex items-start gap-1.5 leading-tight">
+                            <span className="text-blue-500 mt-0.5">•</span>
+                            {action}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-0.5 flex items-center gap-1">
+                        <AlertTriangle className="w-2.5 h-2.5" /> Reason
+                      </p>
+                      <p className="text-[10px] text-gray-600 italic leading-relaxed line-clamp-1">
+                        {rec.reason}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
-            {top.length === 0 && (
-              <tr>
-                <td colSpan="3" className="py-8 text-center text-muted-foreground">
-                  No recommendations at this time.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          </div>
+          {recommendations.length === 0 && (
+            <div className="text-center py-12">
+              <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-3 opacity-50" />
+              <p className="text-sm font-bold text-gray-500">Inventory looks great!</p>
+              <p className="text-xs text-gray-400">All systems within healthy range.</p>
+            </div>
+          )}
+        </div>
+
+        <button 
+          onClick={() => setShowAllModal(true)}
+          className="w-full p-4 text-sm font-black text-yellow-700 hover:bg-yellow-50 border-t border-yellow-100 transition-all bg-white mt-auto flex items-center justify-center gap-2 group"
+        >
+          VIEW ALL RECOMMENDATIONS
+          <TrendingUp className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+        </button>
       </div>
-    </div>
+
+      {/* Full Grid Modal */}
+      {showAllModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-50 rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="p-6 bg-white border-b flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 rounded-lg">
+                  <Lightbulb className="w-6 h-6 text-yellow-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Prescriptive Recommendations</h2>
+                  <p className="text-sm text-gray-500 italic">Actionable insights based on stock, expiry, and sales trends</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAllModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {recommendations.map((rec) => (
+                  <div key={rec.id} className={`bg-white rounded-xl border-2 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md ${
+                    rec.priority === 'CRITICAL' ? 'border-red-200' : 
+                    rec.priority === 'HIGH' ? 'border-orange-200' : 'border-blue-100'
+                  }`}>
+                    <div className={`p-3 border-b flex items-center justify-between ${
+                      rec.priority === 'CRITICAL' ? 'bg-red-50' : 
+                      rec.priority === 'HIGH' ? 'bg-orange-50' : 'bg-blue-50/50'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                          rec.priority === 'CRITICAL' ? 'bg-red-600 text-white' : 
+                          rec.priority === 'HIGH' ? 'bg-orange-500 text-white' : 
+                          rec.priority === 'MEDIUM' ? 'bg-blue-500 text-white' : 'bg-gray-500 text-white'
+                        }`}>
+                          {rec.priority}
+                        </span>
+                        <span className={`text-xs font-bold ${
+                          rec.priority === 'CRITICAL' ? 'text-red-700' : 
+                          rec.priority === 'HIGH' ? 'text-orange-700' : 'text-blue-700'
+                        }`}>
+                          {rec.status}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-bold text-gray-500">
+                        Stock: {rec.stock}
+                      </div>
+                    </div>
+
+                    <div className="p-4 flex-1 flex flex-col">
+                      <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-gray-400" />
+                        {rec.product}
+                      </h3>
+
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" /> Recommended Actions
+                          </p>
+                          <ul className="space-y-1.5">
+                            {rec.actions.map((action, idx) => (
+                              <li key={idx} className="text-xs text-gray-700 flex items-start gap-2 leading-tight">
+                                <span className="text-blue-500 mt-0.5">•</span>
+                                {action}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div className="pt-3 border-t border-gray-100">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" /> Reason
+                          </p>
+                          <p className="text-[11px] text-gray-600 italic leading-relaxed">
+                            {rec.reason}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {recommendations.length === 0 && (
+                <div className="text-center py-24">
+                  <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-xl font-bold text-gray-900">All systems healthy</h3>
+                  <p className="text-gray-500 mt-2">No urgent inventory recommendations at this time.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Calendar, CheckCircle, X, Bell } from 'lucide-react';
+import * as notificationsBackend from '@/backend/notificationsBackend';
 
 export function Notifications({ medicines, onNavigateToTab }) {
   const loadRead = () => {
@@ -17,85 +18,19 @@ export function Notifications({ medicines, onNavigateToTab }) {
   };
 
   const generateNotifications = () => {
-    const notifications = [];
-    const today = new Date();
-
-    medicines.forEach(med => {
-      if (!med || !med.id) return; // Skip invalid medicines
-
-      // Low stock notifications
-      const qty = Number(med.totalQuantity || 0);
-      const lowStockThreshold = med.minStockLevel || 50;
-      
-      if (qty <= lowStockThreshold) {
-        notifications.push({
-          id: `low-${med.id}`,
-          type: 'warning',
-          title: 'Low Stock Alert',
-          message: `${med.name || 'Unknown medicine'} is running low. Current stock: ${qty} ${med.unit || 'units'}`,
-          time: 'Recent',
-          read: false
-        });
-      }
-
-      // Expiry notifications from batches
-      if (med.batches && Array.isArray(med.batches)) {
-        med.batches.forEach(batch => {
-          if (!batch.expiryDate) return;
-          const expiryDate = new Date(batch.expiryDate);
-          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          
-          if (daysUntilExpiry < 0) {
-            notifications.push({
-              id: `expired-${med.id}-${batch.id}`,
-              type: 'error',
-              title: 'Expired Batch',
-              message: `${med.name} (Batch: ${batch.batchNumber}) has expired. Please remove ${batch.quantity} units from inventory.`,
-              time: 'Alert',
-              read: false
-            });
-          } else if (daysUntilExpiry <= 90) { // Notify 3 months before
-            notifications.push({
-              id: `expiring-${med.id}-${batch.id}`,
-              type: 'warning',
-              title: 'Batch Expiring Soon',
-              message: `${med.name} (Batch: ${batch.batchNumber}) will expire in ${daysUntilExpiry} days.`,
-              time: 'Alert',
-              read: false
-            });
-          }
-        });
-      }
-    });
-
-    return notifications;
+    return notificationsBackend.generateNotifications(medicines, new Date());
   };
 
   const [notifications, setNotifications] = useState(() => {
     const base = generateNotifications();
     const read = loadRead();
-    const isRead = (id) => {
-      if (read.has(id)) return true;
-      if (id.startsWith('expiring-')) {
-        return read.has(id.replace('expiring-', 'expired-'));
-      }
-      if (id.startsWith('expired-')) {
-        return read.has(id.replace('expired-', 'expiring-'));
-      }
-      return false;
-    };
-    return base.map(n => ({ ...n, read: isRead(n.id) ? true : n.read }));
+    return base.map(n => ({ ...n, read: notificationsBackend.isNotificationRead(n.id, read) ? true : n.read }));
   });
+
   useEffect(() => {
     const base = generateNotifications();
     const read = loadRead();
-    const isRead = (id) => {
-      if (read.has(id)) return true;
-      if (id.startsWith('expiring-')) return read.has(id.replace('expiring-', 'expired-'));
-      if (id.startsWith('expired-')) return read.has(id.replace('expired-', 'expiring-'));
-      return false;
-    };
-    setNotifications(base.map(n => ({ ...n, read: isRead(n.id) ? true : n.read })));
+    setNotifications(base.map(n => ({ ...n, read: notificationsBackend.isNotificationRead(n.id, read) ? true : n.read })));
   }, [medicines]);
   const unreadCount = notifications.filter(n => !n.read).length;
   const [filterType, setFilterType] = useState('all'); // 'all' | 'error' | 'warning' | 'info' | 'success'
