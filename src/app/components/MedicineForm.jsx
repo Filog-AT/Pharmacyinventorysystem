@@ -357,8 +357,10 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
                   required
                   className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {categoriesList.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                  {categoriesList.map((cat) => (
+                    <option key={cat.id || (cat.name || cat)} value={cat.name || cat}>
+                      {cat.name || cat}
+                    </option>
                   ))}
                   <option value="new">+ Create New Category</option>
                 </select>

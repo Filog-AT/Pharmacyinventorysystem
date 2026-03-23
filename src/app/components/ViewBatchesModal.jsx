@@ -48,8 +48,8 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
     let mounted = true;
     const load = async () => {
       try {
-        if (!medicine?.id) return;
-        const records = await medicineService.getSalesLastNDays(medicine.id, 30);
+        if (!medicine?.id || !currentUser?.pharmacyId) return;
+        const records = await medicineService.getSalesLastNDays(currentUser.pharmacyId, medicine.id, 30);
         if (!mounted) return;
         const series = buildLast30DaysSeries(records);
         setSalesSeries(series);
@@ -327,13 +327,13 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
               <h4 className="text-sm font-semibold text-gray-800 mb-3">Sales Trend (Last 30 days)</h4>
               <div style={{ width: '100%', height: 240 }}>
                 <ResponsiveContainer>
-                  <LineChart data={salesSeries}>
+                  <BarChart data={salesSeries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" fontSize={10} />
                     <YAxis fontSize={10} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="units" stroke="#3B82F6" name="Units sold" dot={false} strokeWidth={2} />
-                  </LineChart>
+                    <Bar dataKey="units" fill="#3B82F6" name="Units sold" radius={[4, 4, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>

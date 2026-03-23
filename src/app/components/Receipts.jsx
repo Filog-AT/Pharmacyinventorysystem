@@ -31,14 +31,15 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
   const [processing, setProcessing] = useState(false);
  
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     (async () => {
       const svc = await loadReceiptService();
       if (svc) {
-        const data = await svc.getRecentReceipts(100);
+        const data = await svc.getReceipts(currentUser.pharmacyId, 100);
         setReceipts(data);
       }
     })();
-  }, []);
+  }, [currentUser?.pharmacyId]);
  
   const filteredMedicines = receiptsBackend.filterMedicines(medicines, searchTerm);
 
@@ -103,11 +104,12 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
       // Process stock reduction using FEFO
       const saleItems = cart.map(item => ({
         medicineId: item.medicine.id,
+        categoryId: item.medicine.categoryId,
         quantity: item.quantity * getUnitMultiplier(item.medicine, item.sellUnit)
       }));
 
       try {
-        await medicineService.processSale(saleItems);
+        await medicineService.processSale(currentUser.pharmacyId, saleItems);
       } catch (err) {
         try {
           window.dispatchEvent(new CustomEvent('local-sale', { detail: { items: saleItems } }));
@@ -121,6 +123,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           customerName: customerName || 'Walk-in',
           items: cart.map((ci) => ({
             medicineId: ci.medicine.id,
+            categoryId: ci.medicine.categoryId,
             name: ci.medicine.name,
             quantity: ci.quantity,
             unitSold: ci.sellUnit,
@@ -134,10 +137,10 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
         };
-        const receiptId = await svc.addReceipt(payload);
+        const receiptId = await svc.addReceipt(currentUser.pharmacyId, payload);
         
         // Log general sale completion
-        await auditService.logAction({
+        await auditService.logAction(currentUser.pharmacyId, {
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
           userRole: currentUser?.role || 'unknown',
@@ -156,10 +159,10 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           },
         });
 
-        const data = await svc.getRecentReceipts(100);
+        const data = await svc.getReceipts(currentUser.pharmacyId, 100);
         setReceipts(data);
         const createdReceipt = { id: receiptId, ...payload };
-        try { await medicineService.getMedicines(); } catch {}
+        try { await medicineService.getMedicines(currentUser.pharmacyId); } catch {}
         try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
         setSaleSuccess(createdReceipt);
         setCart([]);

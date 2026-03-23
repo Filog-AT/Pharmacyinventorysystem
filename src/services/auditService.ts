@@ -5,7 +5,7 @@ import {
   query,
   where,
   orderBy,
-  limit,
+  limit as firestoreLimit,
   Timestamp,
   deleteDoc,
   doc,
@@ -16,7 +16,7 @@ export type AuditActionType = 'MEDICINE_ADD' | 'MEDICINE_EDIT' | 'MEDICINE_DELET
 
 export interface AuditLog {
   id?: string;
-  timestamp: Date;
+  timestamp: any;
   userId: string;
   userName: string;
   userRole: string;
@@ -31,16 +31,15 @@ export interface AuditLog {
   };
 }
 
-const AUDIT_LOGS_COLLECTION = 'audit_logs';
-
 export const auditService = {
   // Log an action
-  async logAction(log: Omit<AuditLog, 'id' | 'timestamp'>): Promise<string> {
+  async logAction(pharmacyId: string, log: Omit<AuditLog, 'id' | 'timestamp'>): Promise<string> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
     try {
       console.log('[Audit] Logging action:', log.action, log.entityName);
-      const docRef = await addDoc(collection(db, AUDIT_LOGS_COLLECTION), {
+      const docRef = await addDoc(collection(db, 'pharmacies', pharmacyId, 'audit_logs'), {
         ...log,
-        timestamp: new Date(),
+        timestamp: Timestamp.now(),
       });
       return docRef.id;
     } catch (error) {
@@ -50,7 +49,7 @@ export const auditService = {
   },
 
   // Get all audit logs (with optional filters)
-  async getLogs(options?: {
+  async getLogs(pharmacyId: string, options?: {
     startDate?: Date;
     endDate?: Date;
     userId?: string;
@@ -58,6 +57,7 @@ export const auditService = {
     entityType?: string;
     limit?: number;
   }): Promise<AuditLog[]> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
     try {
       let constraints: any[] = [];
 
@@ -82,9 +82,9 @@ export const auditService = {
       }
 
       constraints.push(orderBy('timestamp', 'desc'));
-      constraints.push(limit(options?.limit || 100));
+      constraints.push(firestoreLimit(options?.limit || 100));
 
-      const q = query(collection(db, AUDIT_LOGS_COLLECTION), ...constraints);
+      const q = query(collection(db, 'pharmacies', pharmacyId, 'audit_logs'), ...constraints);
       const querySnapshot = await getDocs(q);
       
       const logs: AuditLog[] = [];
@@ -103,13 +103,14 @@ export const auditService = {
   },
 
   // Get logs for a specific medicine
-  async getMedicineLogs(medicineId: string): Promise<AuditLog[]> {
+  async getMedicineLogs(pharmacyId: string, medicineId: string): Promise<AuditLog[]> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
     try {
       const q = query(
-        collection(db, AUDIT_LOGS_COLLECTION),
+        collection(db, 'pharmacies', pharmacyId, 'audit_logs'),
         where('entityId', '==', medicineId),
         orderBy('timestamp', 'desc'),
-        limit(50)
+        firestoreLimit(50)
       );
       
       const querySnapshot = await getDocs(q);
@@ -130,13 +131,14 @@ export const auditService = {
   },
 
   // Get logs for a specific user
-  async getUserActivityLogs(userId: string, limitCount: number = 50): Promise<AuditLog[]> {
+  async getUserActivityLogs(pharmacyId: string, userId: string, limitCount: number = 50): Promise<AuditLog[]> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
     try {
       const q = query(
-        collection(db, AUDIT_LOGS_COLLECTION),
+        collection(db, 'pharmacies', pharmacyId, 'audit_logs'),
         where('userId', '==', userId),
         orderBy('timestamp', 'desc'),
-        limit(limitCount)
+        firestoreLimit(limitCount)
       );
       
       const querySnapshot = await getDocs(q);
@@ -158,6 +160,7 @@ export const auditService = {
 
   // Helper methods for common actions
   async logMedicineAdded(
+    pharmacyId: string,
     userId: string,
     userName: string,
     userRole: string,
@@ -165,7 +168,7 @@ export const auditService = {
     medicineName: string,
     medicineData: any
   ): Promise<string> {
-    return this.logAction({
+    return this.logAction(pharmacyId, {
       userId,
       userName,
       userRole,
@@ -178,6 +181,7 @@ export const auditService = {
   },
 
   async logMedicineEdited(
+    pharmacyId: string,
     userId: string,
     userName: string,
     userRole: string,
@@ -186,7 +190,7 @@ export const auditService = {
     before: any,
     after: any
   ): Promise<string> {
-    return this.logAction({
+    return this.logAction(pharmacyId, {
       userId,
       userName,
       userRole,
@@ -200,13 +204,14 @@ export const auditService = {
   },
 
   async logMedicineDeleted(
+    pharmacyId: string,
     userId: string,
     userName: string,
     userRole: string,
     medicineId: string,
     medicineName: string
   ): Promise<string> {
-    return this.logAction({
+    return this.logAction(pharmacyId, {
       userId,
       userName,
       userRole,
@@ -219,6 +224,7 @@ export const auditService = {
   },
 
   async logMedicineSold(
+    pharmacyId: string,
     userId: string,
     userName: string,
     userRole: string,
@@ -228,7 +234,7 @@ export const auditService = {
     totalPrice: number,
     customerName?: string
   ): Promise<string> {
-    return this.logAction({
+    return this.logAction(pharmacyId, {
       userId,
       userName,
       userRole,
@@ -245,11 +251,12 @@ export const auditService = {
   },
 
   // Danger: Clear all logs
-  async clearAllLogs(): Promise<void> {
-    const snap = await getDocs(collection(db, AUDIT_LOGS_COLLECTION));
+  async clearAllLogs(pharmacyId: string): Promise<void> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
+    const snap = await getDocs(collection(db, 'pharmacies', pharmacyId, 'audit_logs'));
     const deletions: Promise<void>[] = [];
     snap.forEach((d) => {
-      deletions.push(deleteDoc(doc(db, AUDIT_LOGS_COLLECTION, d.id)));
+      deletions.push(deleteDoc(doc(db, 'pharmacies', pharmacyId, 'audit_logs', d.id)));
     });
     await Promise.all(deletions);
   },

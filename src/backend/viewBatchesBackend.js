@@ -11,22 +11,31 @@ export const formatDateLabel = (d) => {
 export const buildLast30DaysSeries = (records, formatDateLabel) => {
   const series = [];
   const map = new Map();
+  
+  // Use local date string YYYY-MM-DD for reliable grouping
+  const getLocalKey = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+
   (records || []).forEach(r => {
     const d = r?.date_sold && typeof r.date_sold.toDate === 'function' ? r.date_sold.toDate() : new Date(r.date_sold);
-    const key = new Date(d);
-    key.setHours(0, 0, 0, 0);
-    const kStr = key.toISOString();
-    const prev = map.get(kStr) || 0;
-    map.set(kStr, prev + Number(r.quantity_sold || 0));
+    if (isNaN(d.getTime())) return;
+    
+    const key = getLocalKey(d);
+    const prev = map.get(key) || 0;
+    map.set(key, prev + Number(r.quantity_sold || 0));
   });
+
   const start = new Date();
   start.setDate(start.getDate() - 29);
   start.setHours(0, 0, 0, 0);
+
   for (let i = 0; i < 30; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
-    const kStr = new Date(d).toISOString();
-    const units = map.get(kStr) || 0;
+    const key = getLocalKey(d);
+    const units = map.get(key) || 0;
     series.push({ date: new Date(d), label: formatDateLabel(d), units });
   }
   return series;

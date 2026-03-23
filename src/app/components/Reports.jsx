@@ -5,21 +5,22 @@ import * as reportsBackend from '@/backend/reportsBackend';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
-export function Reports({ medicines }) {
+export function Reports({ medicines, currentUser }) {
   const [receipts, setReceipts] = useState([]);
 
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     const loadData = async () => {
       try {
         const { receiptService } = await import('@/services/receiptService');
-        const data = await receiptService.getRecentReceipts(1000);
-        setReceipts(data);
+        const data = await receiptService.getRecentReceipts(currentUser.pharmacyId, 1000);
+        setReceipts(data || []);
       } catch (e) {
         console.warn('[Reports] Failed to load receipts:', e);
       }
     };
     loadData();
-  }, []);
+  }, [currentUser?.pharmacyId]);
 
   // Process sales data for the trend chart
   const salesTrendData = useMemo(() => {

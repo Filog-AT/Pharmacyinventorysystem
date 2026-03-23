@@ -9,6 +9,13 @@ export const getRevenueData = (receipts, timeScale) => {
   const totals = new Map();
   const counts = new Map();
 
+  const getLocalKey = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+
   if (timeScale === 'weekly') {
     // Last 12 weeks
     for (let i = 11; i >= 0; i--) {
@@ -16,20 +23,22 @@ export const getRevenueData = (receipts, timeScale) => {
       d.setDate(d.getDate() - i * 7);
       const day = d.getDay() || 7;
       d.setDate(d.getDate() - (day - 1)); // Monday
-      const key = d.toISOString().slice(0, 10);
+      d.setHours(0, 0, 0, 0);
+      const key = getLocalKey(d);
       data.push({ key, label: `Wk ${d.getMonth() + 1}/${d.getDate()}` });
       totals.set(key, 0);
       counts.set(key, 0);
     }
     receipts.forEach(r => {
       const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+      if (isNaN(ts.getTime())) return;
       const day = ts.getDay() || 7;
       const d = new Date(ts);
       d.setDate(d.getDate() - (day - 1));
       d.setHours(0, 0, 0, 0);
-      const k = d.toISOString().slice(0, 10);
+      const k = getLocalKey(d);
       if (totals.has(k)) {
-        totals.set(k, totals.get(k) + Number(r.grandTotal || 0));
+        totals.set(k, totals.get(k) + Number(r.grandTotal || r.total || r.subtotal || 0));
         counts.set(k, counts.get(k) + 1);
       }
     });
@@ -44,9 +53,10 @@ export const getRevenueData = (receipts, timeScale) => {
     }
     receipts.forEach(r => {
       const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+      if (isNaN(ts.getTime())) return;
       const k = String(ts.getFullYear());
       if (totals.has(k)) {
-        totals.set(k, totals.get(k) + Number(r.grandTotal || 0));
+        totals.set(k, totals.get(k) + Number(r.grandTotal || r.total || r.subtotal || 0));
         counts.set(k, counts.get(k) + 1);
       }
     });
@@ -61,9 +71,10 @@ export const getRevenueData = (receipts, timeScale) => {
     }
     receipts.forEach(r => {
       const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+      if (isNaN(ts.getTime())) return;
       const k = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
       if (totals.has(k)) {
-        totals.set(k, totals.get(k) + Number(r.grandTotal || 0));
+        totals.set(k, totals.get(k) + Number(r.grandTotal || r.total || r.subtotal || 0));
         counts.set(k, counts.get(k) + 1);
       }
     });
@@ -77,11 +88,12 @@ export const getRevenueData = (receipts, timeScale) => {
 };
 
 export const getTopBottomSold = (receipts, medicines, timeScale = 'month') => {
-  const medSales = new Map();
+  const medNameSales = new Map();
   const now = new Date();
   
   const filteredReceipts = receipts.filter(r => {
     const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+    if (isNaN(ts.getTime())) return false;
     if (timeScale === 'weekly') {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(now.getDate() - 7);
@@ -101,15 +113,25 @@ export const getTopBottomSold = (receipts, medicines, timeScale = 'month') => {
   filteredReceipts.forEach(r => {
     if (Array.isArray(r.items)) {
       r.items.forEach(it => {
+        // Group only by name as requested
+        const name = (it.name || '').trim().toLowerCase();
+        if (!name) return;
         const qty = Number(it.quantity || 0);
-        medSales.set(it.medicineId, (medSales.get(it.medicineId) || 0) + qty);
+        medNameSales.set(name, (medNameSales.get(name) || 0) + qty);
       });
     }
   });
 
-  const sorted = medicines.map(m => ({
-    name: m.name,
-    sales: medSales.get(m.id) || 0
+  // Unique list of medicine names from current inventory
+  const uniqueNames = new Set();
+  medicines.forEach(m => {
+    const name = (m.name || '').trim().toLowerCase();
+    if (name) uniqueNames.add(name);
+  });
+
+  const sorted = Array.from(uniqueNames).map(name => ({
+    name: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), // Capitalize for display
+    sales: medNameSales.get(name) || 0
   })).sort((a, b) => b.sales - a.sales);
 
   return {

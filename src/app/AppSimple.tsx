@@ -17,7 +17,7 @@ import { AuditLog } from './components/AuditLog';
 import { SalesPOS } from './components/SalesPOS';
 import { Receipts } from './components/Receipts';
 import { auditService } from '@/services/auditService';
-import { Toaster } from '@/app/components/ui/sonner';
+import { Toaster, toast } from '@/app/components/ui/sonner';
 
 // Import Firebase services (will load async)
 let medicineService: any = null;
@@ -41,22 +41,35 @@ const loadFirebaseAsync = async () => {
   }
 };
 
-type CurrentUser = {
-  uid: string;
-  email: string | null;
-  name: string;
-  role: string;
-} | null;
+import { userService, UserProfile } from '@/services/userService';
+
+type CurrentUser = UserProfile | null;
 
 function AppSimple() {
   const [currentUser, setCurrentUser] = useState<CurrentUser>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activePage, setActivePage] = useState(() => {
-    const hash = window.location.hash.replace('#', '');
-    return hash || 'dashboard';
+    // If we're not authenticated, we should show the login page
+    // The auth listener will handle setting the user once loaded
+    return 'dashboard';
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [medicines, setMedicines] = useState<any[]>([]);
+
+  // Monitor auth state
+  useEffect(() => {
+    const unsubscribe = userService.onAuthChanged((user) => {
+      setCurrentUser(user);
+      setAuthLoading(false);
+      
+      // Update pharmacy name in settings if available
+      if (user?.pharmacyName) {
+        setSettings(prev => ({ ...prev, pharmacyName: user.pharmacyName || prev.pharmacyName }));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const notifications = useMemo(() => {
     const list: any[] = [];
@@ -87,18 +100,7 @@ function AppSimple() {
 
   const unreadNotifs = notifications.filter(n => !n.read);
   const [firebaseReady, setFirebaseReady] = useState(false);
-  const [categories, setCategories] = useState([
-    'Antibiotic',
-    'Painkiller',
-    'Antiviral',
-    'Antihistamine',
-    'Cardiovascular',
-    'Diabetes',
-    'Respiratory',
-    'Gastrointestinal',
-    'Dermatological',
-    'Vitamins & Supplements'
-  ]);
+  const [categories, setCategories] = useState<{id: string, name: string}[]>([]);
   const [settings, setSettings] = useState(() => {
     try {
       const saved = localStorage.getItem('pharmacy_settings');
@@ -166,42 +168,29 @@ function AppSimple() {
 
   // Load categories from Firestore in background
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     const syncCategories = async () => {
       try {
         const services = await loadFirebaseAsync();
-        if (!services || !services.categoryService) {
-          console.log('[AppSimple] Category service not available, using defaults');
-          return;
-        }
-        const firebaseCategories = await services.categoryService.getCategories();
+        if (!services || !services.categoryService) return;
+        const firebaseCategories = await services.categoryService.getCategories(currentUser.pharmacyId);
         if (firebaseCategories && firebaseCategories.length > 0) {
-          const uniqueNames = [...new Set(firebaseCategories.map((c: any) => c.name).filter(Boolean))];
-          setCategories(uniqueNames as string[]);
-        } else {
-          const defaults = [
-            'Antibiotic','Painkiller','Antiviral','Antihistamine','Cardiovascular','Diabetes','Respiratory','Gastrointestinal','Dermatological','Vitamins & Supplements'
-          ];
-          for (const name of defaults) {
-            try { await services.categoryService.addCategory(name); } catch {}
-          }
-          const populated = await services.categoryService.getCategories();
-          const uniquePopulated = [...new Set(populated.map((c: any) => c.name).filter(Boolean))];
-          setCategories(uniquePopulated as string[]);
+          setCategories(firebaseCategories);
         }
       } catch (error) {
         console.warn('[AppSimple] Failed to sync categories:', error);
       }
     };
-    const timer = setTimeout(syncCategories, 600);
-    return () => clearTimeout(timer);
-  }, []);
+    syncCategories();
+  }, [currentUser?.pharmacyId]);
 
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     const handler = async () => {
       try {
         const services = await loadFirebaseAsync();
         if (services?.medicineService) {
-          const updated = await services.medicineService.getMedicines();
+          const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
           setMedicines(updated);
         }
       } catch (e) {
@@ -210,7 +199,7 @@ function AppSimple() {
     };
     window.addEventListener('refresh-medicines', handler as any);
     return () => window.removeEventListener('refresh-medicines', handler as any);
-  }, []);
+  }, [currentUser?.pharmacyId]);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -278,92 +267,99 @@ function AppSimple() {
       }
     };
     window.addEventListener('local-sale', handler as any);
-    return () => window.removeEventListener('local-sale', handler as any);
-  }, []);
+    
+    const refreshHandler = async () => {
+      if (!currentUser?.pharmacyId) return;
+      try {
+        const services = await loadFirebaseAsync();
+        if (services?.medicineService) {
+          const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+          setMedicines(updated || []);
+        }
+      } catch (e) {
+        console.warn('[AppSimple] refresh-medicines failed:', e);
+      }
+    };
+    window.addEventListener('refresh-medicines', refreshHandler);
+
+    return () => {
+      window.removeEventListener('local-sale', handler as any);
+      window.removeEventListener('refresh-medicines', refreshHandler);
+    };
+  }, [currentUser?.pharmacyId]);
 
   // Load Firebase data in background (after UI renders)
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     const syncFirebaseData = async () => {
       try {
         const services = await loadFirebaseAsync();
         if (!services || !services.medicineService) {
-          console.log('[AppSimple] Using local-only mode');
           setFirebaseReady(false);
           return;
         }
 
-        console.log('[AppSimple] Syncing with Firebase...');
-        const firebaseMedicines = await services.medicineService.getMedicines();
-        console.log('[AppSimple] Firestore medicines received:', firebaseMedicines);
-        
-        // Always update from Firebase if successful, even if empty
-        console.log('[AppSimple] Updated from Firebase:', (firebaseMedicines || []).length, 'medicines');
-        
-        // Deduplicate based on ID just in case
+        const firebaseMedicines = await services.medicineService.getMedicines(currentUser.pharmacyId);
         const uniqueMedicines = Array.from(
           new Map((firebaseMedicines || []).map(m => [m.id, m])).values()
         );
         
+        const firebaseCategories = await services.categoryService.getCategories(currentUser.pharmacyId);
+        
         setMedicines(uniqueMedicines);
+        setCategories(firebaseCategories || []);
         setFirebaseReady(true);
       } catch (error) {
-        console.warn('[AppSimple] Firebase sync failed, using local data:', error);
+        console.warn('[AppSimple] Firebase sync failed:', error);
         setFirebaseReady(false);
       }
     };
+    syncFirebaseData();
+  }, [currentUser?.pharmacyId]);
 
-    // Delay Firebase sync to let UI render first
-    const timer = setTimeout(syncFirebaseData, 500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleLogin = (user: any) => {
-    // Ensure user has all required properties
-    const appUser: CurrentUser = {
-      uid: user.uid || user.username || 'mock-uid',
-      email: user.email || (user.username ? `${user.username}@example.com` : null),
-      name: user.name,
-      role: user.role
-    };
-    setCurrentUser(appUser);
+  const handleLogin = (profile: UserProfile) => {
+    setCurrentUser(profile);
     setActivePage('dashboard');
+    
+    // Update settings with pharmacy name
+    if (profile.pharmacyName) {
+      setSettings(prev => ({ ...prev, pharmacyName: profile.pharmacyName || prev.pharmacyName }));
+    }
+
     try {
-      sessionStorage.removeItem(`pharmacy_low_toasts_shown_${appUser.uid}`);
+      sessionStorage.removeItem(`pharmacy_low_toasts_shown_${profile.uid}`);
     } catch {}
     (async () => {
       try {
-        await auditService.logAction({
-          userId: appUser?.uid || 'unknown',
-          userName: appUser?.name || 'Unknown User',
-          userRole: appUser?.role || 'unknown',
+        await auditService.logAction(profile.pharmacyId, {
+          userId: profile.uid,
+          userName: profile.name,
+          userRole: profile.role,
           action: 'LOGIN',
           entityType: 'auth',
           entityName: 'User Login',
           details: {},
         });
-      } catch (e) {
-        console.warn('[AppSimple] Failed to log login:', e);
-      }
+      } catch (e) {}
     })();
   };
 
-  const handleLogoutAction = () => {
+  const handleLogoutAction = async () => {
     const user = currentUser;
-    (async () => {
+    if (user) {
       try {
-        await auditService.logAction({
-          userId: user?.uid || 'unknown',
-          userName: user?.name || 'Unknown User',
-          userRole: user?.role || 'unknown',
+        await auditService.logAction(user.pharmacyId, {
+          userId: user.uid,
+          userName: user.name,
+          userRole: user.role,
           action: 'LOGOUT',
           entityType: 'auth',
           entityName: 'User Logout',
           details: {},
         });
-      } catch (e) {
-        console.warn('[AppSimple] Failed to log logout:', e);
-      }
-    })();
+      } catch (e) {}
+    }
+    await userService.signOut();
     setCurrentUser(null);
     setActivePage('dashboard');
   };
@@ -375,6 +371,7 @@ function AppSimple() {
   };
 
   const handleAddCategory = (newCategory: string) => {
+    if (!currentUser?.pharmacyId) return;
     if (!categories.includes(newCategory)) {
       setCategories(prev => [...prev, newCategory]);
       // Also save to Firebase if available
@@ -382,7 +379,7 @@ function AppSimple() {
         try {
           const services = await loadFirebaseAsync();
           if (services?.categoryService) {
-            await services.categoryService.addCategory(newCategory);
+            await services.categoryService.addCategory(currentUser.pharmacyId, newCategory);
           }
         } catch (e) {
           console.warn('[AppSimple] Failed to add category to Firebase:', e);
@@ -391,13 +388,14 @@ function AppSimple() {
     }
   };
   const handleDeleteCategory = (categoryName: string) => {
+    if (!currentUser?.pharmacyId) return;
     setCategories(prev => prev.filter(c => c !== categoryName));
     // Also delete from Firebase if available
     (async () => {
       try {
         const services = await loadFirebaseAsync();
         if (services?.categoryService) {
-          await services.categoryService.deleteCategoryByName(categoryName);
+          await services.categoryService.deleteCategoryByName(currentUser.pharmacyId, categoryName);
         }
       } catch (e) {
         console.warn('[AppSimple] Failed to delete category from Firebase:', e);
@@ -406,185 +404,202 @@ function AppSimple() {
   };
 
   const handleAddMedicine = async (medicineData: any) => {
-    const baseId = Date.now().toString();
-    const normName = (medicineData.name || '').trim().toLowerCase();
-    const normForm = (medicineData.dosageForm || '').trim().toLowerCase();
-    const normStrength = String(medicineData.strength || '').replace(/\s+/g, '').toLowerCase();
+    if (!currentUser?.pharmacyId) return;
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        const categoryObj = categories.find(c => c.name === medicineData.category);
+        if (!categoryObj) throw new Error('Category not found');
 
-    const existing = medicines.find(m =>
-      (m.name || '').trim().toLowerCase() === normName &&
-      (m.dosageForm || '').trim().toLowerCase() === normForm &&
-      String(m.strength || '').replace(/\s+/g, '').toLowerCase() === normStrength
-    );
-
-    const buildBatchPayload = (payload: any) => {
-      const unit = payload.unit || 'units';
-      const isBoxes = unit === 'boxes';
-      const qty = Number(payload.quantity || 0);
-      const blisters = Number(payload.blisterCount || 1);
-      const perBlister = Number(payload.tabletCount || 1);
-      // Normalize to boxes/blisters/units triple
-      const boxesReceived = isBoxes ? qty : 1;
-      const blistersPerBox = isBoxes ? blisters : 1;
-      const unitsPerBlister = isBoxes ? perBlister : qty;
-      return {
-        batchNumber: `BN-${baseId.slice(-6)}`,
-        expiryDate: payload.expiryDate || '',
-        supplier: payload.supplier || '',
-        boxesReceived,
-        blistersPerBox,
-        unitsPerBlister,
-      };
-    };
-
-    if (existing) {
-      const batchData = buildBatchPayload(medicineData);
-      await handleAddBatch(existing.id, batchData);
-      return;
-    }
-
-    // Create new medicine with initial batch aligned to batch schema
-    const batchData = buildBatchPayload(medicineData);
-    const totalUnits = Number(batchData.boxesReceived || 0) * Number(batchData.blistersPerBox || 1) * Number(batchData.unitsPerBlister || 1);
-    const initialBatch = {
-      ...batchData,
-      id: `bn-${baseId}`,
-      quantity: totalUnits,
-      initialQuantity: totalUnits,
-      createdAt: new Date().toISOString(),
-    };
-
-    const newMedicine = {
-      ...medicineData,
-      id: baseId,
-      name: (medicineData.name || '').trim(),
-      totalQuantity: totalUnits,
-      unit: medicineData.subUnitType || medicineData.unit || 'units',
-      batches: [initialBatch]
-    };
-    setMedicines(prev => [...prev, newMedicine]);
-    (async () => {
-      try {
-        await auditService.logAction({
-          userId: currentUser?.uid || 'unknown',
-          userName: currentUser?.name || 'Unknown User',
-          userRole: currentUser?.role || 'unknown',
-          action: 'MEDICINE_ADD',
+        const medicineId = await services.medicineService.addMedicine(
+          currentUser.pharmacyId,
+          categoryObj.id,
+          medicineData
+        );
+        
+        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+        setMedicines(updated || []);
+        
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'ADD',
           entityType: 'medicine',
-          entityId: newMedicine.id,
-          entityName: newMedicine.name,
-          details: newMedicine,
+          entityName: medicineData.name,
+          details: { id: medicineId, ...medicineData }
         });
-      } catch (e) {}
-    })();
-    if (firebaseReady) {
-      try {
-        const services = await loadFirebaseAsync();
-        if (services?.medicineService) {
-          const { id, ...dataWithoutId } = newMedicine;
-          const firebaseId = await services.medicineService.addMedicine(dataWithoutId);
-          setMedicines(prev => prev.map(m => m.id === newMedicine.id ? { ...m, id: firebaseId } : m));
-        }
-      } catch {}
+      }
+    } catch (error: any) {
+      console.error('Error adding medicine:', error);
     }
   };
 
   const handleAddBatch = async (medicineId: string, batchData: any) => {
+    if (!currentUser?.pharmacyId) return;
     try {
       const services = await loadFirebaseAsync();
       if (services?.medicineService) {
-        await services.medicineService.addBatch(medicineId, batchData);
-        // Refresh medicines
-        const updatedMedicines = await services.medicineService.getMedicines();
-        setMedicines(updatedMedicines);
+        const medicine = medicines.find(m => m.id === medicineId);
+        if (!medicine) throw new Error('Medicine not found');
+
+        await services.medicineService.addBatch(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          medicineId,
+          batchData
+        );
+        
+        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+        setMedicines(updated || []);
+        
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'ADD_BATCH',
+          entityType: 'medicine',
+          entityName: medicine.name,
+          details: { medicineId, ...batchData }
+        });
       }
     } catch (error) {
-      console.error('[AppSimple] Failed to add batch:', error);
+      console.error('Error adding batch:', error);
+      toast.error('Failed to add batch');
     }
   };
 
   const handleUpdateBatch = async (medicineId: string, batchId: string, batchData: any) => {
+    if (!currentUser?.pharmacyId) return;
     try {
       const services = await loadFirebaseAsync();
       if (services?.medicineService) {
-        await services.medicineService.updateBatch(medicineId, batchId, batchData);
-        // Refresh medicines
-        const updatedMedicines = await services.medicineService.getMedicines();
-        setMedicines(updatedMedicines);
+        const medicine = medicines.find(m => m.id === medicineId);
+        if (!medicine) throw new Error('Medicine not found');
+
+        await services.medicineService.updateBatch(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          medicineId,
+          batchId,
+          batchData
+        );
+        
+        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+        setMedicines(updated || []);
+        
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'UPDATE_BATCH',
+          entityType: 'medicine',
+          entityName: medicine.name,
+          details: { medicineId, batchId, ...batchData }
+        });
       }
     } catch (error) {
-      console.error('[AppSimple] Failed to update batch:', error);
+      console.error('Error updating batch:', error);
+      toast.error('Failed to update batch');
+    }
+  };
+
+  const handleDeleteBatch = async (medicineId: string, batchId: string) => {
+    if (!currentUser?.pharmacyId) return;
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        const medicine = medicines.find(m => m.id === medicineId);
+        if (!medicine) throw new Error('Medicine not found');
+
+        await services.medicineService.deleteBatch(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          medicineId,
+          batchId
+        );
+        
+        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+        setMedicines(updated || []);
+        
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'DELETE_BATCH',
+          entityType: 'medicine',
+          entityName: medicine.name,
+          details: { medicineId, batchId }
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting batch:', error);
+      toast.error('Failed to delete batch');
     }
   };
 
   const handleUpdateMedicine = async (id: string, medicineData: any) => {
-    const updatedMedicine = { ...medicineData, id };
-    setMedicines(prev =>
-      prev.map(m => m.id === id ? updatedMedicine : m)
-    );
-    (async () => {
-      try {
-        await auditService.logAction({
-          userId: currentUser?.uid || 'unknown',
-          userName: currentUser?.name || 'Unknown User',
-          userRole: currentUser?.role || 'unknown',
-          action: 'MEDICINE_EDIT',
-          entityType: 'medicine',
-          entityId: id,
-          entityName: medicineData.name,
-          details: updatedMedicine,
-          changes: { before: medicines.find(m => m.id === id), after: updatedMedicine },
-        });
-      } catch (e) {
-        console.warn('[AppSimple] Failed to log medicine edit:', e);
-      }
-    })();
-    
-    // Also update in Firebase if available
-    if (firebaseReady) {
-      try {
+    if (!currentUser?.pharmacyId) return;
+    try {
       const services = await loadFirebaseAsync();
       if (services?.medicineService) {
-        await services.medicineService.updateMedicine(id, medicineData);
-          console.log('[AppSimple] Medicine updated in Firebase:', id);
-        }
-      } catch (error) {
-        console.error('[AppSimple] Failed to update medicine in Firebase:', error);
+        const medicine = medicines.find(m => m.id === id);
+        if (!medicine) throw new Error('Medicine not found');
+
+        await services.medicineService.updateMedicine(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          id,
+          medicineData
+        );
+        
+        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+        setMedicines(updated || []);
+        
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'UPDATE',
+          entityType: 'medicine',
+          entityName: medicine.name,
+          details: { id, ...medicineData }
+        });
       }
+    } catch (error: any) {
+      console.error('Error updating medicine:', error);
     }
   };
 
   const performDeleteMedicine = async (id: string) => {
-    const toDelete = medicines.find(m => m.id === id);
-    setMedicines(prev => prev.filter(m => m.id !== id));
-    (async () => {
-      try {
-        await auditService.logAction({
-          userId: currentUser?.uid || 'unknown',
-          userName: currentUser?.name || 'Unknown User',
-          userRole: currentUser?.role || 'unknown',
-          action: 'MEDICINE_DELETE',
+    if (!currentUser?.pharmacyId) return;
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        const medicine = medicines.find(m => m.id === id);
+        if (!medicine) throw new Error('Medicine not found');
+
+        await services.medicineService.deleteMedicine(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          id
+        );
+        
+        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+        setMedicines(updated || []);
+        
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'DELETE',
           entityType: 'medicine',
-          entityId: id,
-          entityName: toDelete?.name || 'Unknown',
-          details: toDelete || {},
+          entityName: medicine.name,
+          details: { id }
         });
-      } catch (e) {
-        console.warn('[AppSimple] Failed to log medicine delete:', e);
       }
-    })();
-    
-    // Also delete from Firebase if available
-    if (firebaseReady) {
-      try {
-        const services = await loadFirebaseAsync();
-        if (services?.medicineService) {
-          await services.medicineService.deleteMedicine(id);
-          console.log('[AppSimple] Medicine deleted from Firebase:', id);
-        }
-      } catch (error) {
-        console.error('[AppSimple] Failed to delete medicine from Firebase:', error);
-      }
+    } catch (error) {
+      console.error('Error deleting medicine:', error);
     }
   };
 
@@ -679,14 +694,14 @@ function AppSimple() {
             onDeleteMedicine={handleDeleteMedicine}
             onAddBatch={handleAddBatch}
             onUpdateBatch={handleUpdateBatch}
-            onDeleteBatch={handleDeleteMedicine}
+            onDeleteBatch={handleDeleteBatch}
             currentUser={currentUser}
           />
         );
       case 'customers':
         return <Customers />;
       case 'reports':
-        return <Reports medicines={medicines} />;
+        return <Reports medicines={medicines} currentUser={currentUser} />;
       case 'notifications':
         return <Notifications medicines={medicines} onNavigateToTab={setActivePage} />;
       case 'settings':
@@ -698,17 +713,18 @@ function AppSimple() {
             onUpdateSettings={setSettings}
             currentUser={currentUser}
             medicines={medicines}
+            categories={categories}
           />
         );
       case 'analytics':
         if (currentUser?.role !== 'manager') {
           return <div className="p-6">Unauthorized</div>;
         }
-        return <Analytics medicines={medicines} categories={categories} />;
+        return <Analytics medicines={medicines} categories={categories} currentUser={currentUser} />;
       case 'orders':
         return <OrdersSuppliers />;
       case 'activity':
-        return <AuditLog />;
+        return <AuditLog currentUser={currentUser} />;
       case 'receipts':
         if (currentUser?.role !== 'staff') {
           return <div className="p-6">Unauthorized</div>;
@@ -732,9 +748,23 @@ function AppSimple() {
     }
   };
 
-  // Show login page if not authenticated
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
+          <p className="text-gray-500 font-medium animate-pulse">Initializing System...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
-    return <Login onLogin={handleLogin} pharmacyName={settings.pharmacyName} />;
+    return (
+      <ErrorBoundary>
+        <Login onLogin={handleLogin} pharmacyName={settings.pharmacyName} />
+      </ErrorBoundary>
+    );
   }
 
   return (

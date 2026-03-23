@@ -5,7 +5,7 @@ import { LineChart, Line, CartesianGrid, XAxis, YAxis, ResponsiveContainer, BarC
 import { PrescriptiveRecommendations } from '@/app/components/PrescriptiveRecommendations';
 import * as analyticsBackend from '@/backend/analyticsBackend';
 
-export function Analytics({ medicines = [], categories = [] }) {
+export function Analytics({ medicines = [], categories = [], currentUser }) {
   const [receipts, setReceipts] = useState([]);
   const [timeScale, setTimeScale] = useState('month'); // weekly|month|yearly
   const [topBottomTimeScale, setTopBottomTimeScale] = useState('month'); // weekly|month|yearly
@@ -21,15 +21,15 @@ export function Analytics({ medicines = [], categories = [] }) {
   const [selectedSeries, setSelectedSeries] = useState([]);
   const [forecastData, setForecastData] = useState({ dailyUsage: 0, predicted30: 0, daysRemaining: null, stockoutDate: null, reorderPoint: 0 });
 
-  const topSoldData = useMemo(() => {
-    const res = analyticsBackend.getTopBottomSold(receipts, medicines, topSoldTimeScale);
-    return res.top10;
-  }, [receipts, medicines, topSoldTimeScale]);
+  const topBottomData = useMemo(() => {
+    return {
+      top: analyticsBackend.getTopBottomSold(receipts, medicines, topSoldTimeScale).top10,
+      least: analyticsBackend.getTopBottomSold(receipts, medicines, leastSoldTimeScale).bottom10
+    };
+  }, [receipts, medicines, topSoldTimeScale, leastSoldTimeScale]);
 
-  const leastSoldData = useMemo(() => {
-    const res = analyticsBackend.getTopBottomSold(receipts, medicines, leastSoldTimeScale);
-    return res.bottom10;
-  }, [receipts, medicines, leastSoldTimeScale]);
+  const topSoldData = topBottomData.top;
+  const leastSoldData = topBottomData.least;
 
   const seasonalDemand = useMemo(() => {
     return analyticsBackend.getSeasonalDemand(medicines);
@@ -80,11 +80,13 @@ export function Analytics({ medicines = [], categories = [] }) {
   };
 
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     const load = async () => {
       const svc = await loadReceiptService();
       try {
         if (svc) {
-          const data = await svc.getRecentReceipts(2000);
+          // Pass 0 to remove limit and get all receipts for full historical analysis
+          const data = await svc.getReceipts(currentUser.pharmacyId, 0);
           setReceipts(data || []);
         }
       } catch {
@@ -92,9 +94,9 @@ export function Analytics({ medicines = [], categories = [] }) {
       }
     };
     load();
-    const interval = setInterval(load, 15000);
+    const interval = setInterval(load, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentUser?.pharmacyId]);
 
   const monthlyRevenue = useMemo(() => {
     const now = new Date();
@@ -182,13 +184,13 @@ export function Analytics({ medicines = [], categories = [] }) {
     let mounted = true;
     const load = async () => {
       try {
-        if (!selectedMedicineId) {
+        if (!selectedMedicineId || !currentUser?.pharmacyId) {
           setSelectedSeries([]);
           setForecastData({ dailyUsage: 0, predicted30: 0, daysRemaining: null, stockoutDate: null, reorderPoint: 0 });
           return;
         }
         const svc = await import('@/services/medicineService');
-        const sales = await svc.medicineService.getSalesLastNDays(selectedMedicineId, 180);
+        const sales = await svc.medicineService.getSalesLastNDays(currentUser.pharmacyId, selectedMedicineId, 180);
         if (!mounted) return;
         const byKey = new Map();
         const bucketKey = (d) => {
@@ -252,7 +254,7 @@ export function Analytics({ medicines = [], categories = [] }) {
       }
     };
     load();
-    const t = setInterval(load, 15000);
+    const t = setInterval(load, 60000);
     return () => { mounted = false; clearInterval(t); };
   }, [selectedMedicineId, timeScale, startDate, endDate, medicines]);
 

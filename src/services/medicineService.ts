@@ -8,44 +8,43 @@ import {
   query,
   where,
   QueryConstraint,
+  limit as firestoreLimit,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { Medicine, Batch } from '@/store/medicineStore';
-
-const MEDICINES_COLLECTION = 'medicines';
-const SALES_COLLECTION = 'sales';
+import { categoryService } from './categoryService';
 
 export const medicineService = {
-  // Get all medicines
-  async getMedicines(constraints?: QueryConstraint[]): Promise<Medicine[]> {
+  // Get all medicines for a pharmacy
+  async getMedicines(pharmacyId: string, constraints?: QueryConstraint[]): Promise<Medicine[]> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
     try {
-      const q = constraints
-        ? query(collection(db, MEDICINES_COLLECTION), ...constraints)
-        : collection(db, MEDICINES_COLLECTION);
-      
-      const querySnapshot = await getDocs(q);
-      const medicines: Medicine[] = [];
-      
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const { id, ...dataWithoutId } = data;
-        const m: Medicine = {
-          id: doc.id,
-          ...dataWithoutId,
-        } as Medicine;
-        // Ensure numeric fields are coerced properly
-        m.price = Number((dataWithoutId as any)?.price ?? 0);
-        m.totalQuantity = Number((dataWithoutId as any)?.totalQuantity ?? 0);
-        m.minStockLevel = Number((dataWithoutId as any)?.minStockLevel ?? 0);
-        // Normalize strings
-        m.name = (m.name || '').trim();
-        m.dosageForm = (m.dosageForm || 'tablet').trim();
-        m.strength = (m.strength || '').trim();
-        m.unit = (m.unit || 'units').trim();
-        medicines.push(m);
+      // Avoid collectionGroup which requires index by fetching per category
+      const categories = await categoryService.getCategories(pharmacyId);
+      if (categories.length === 0) return [];
+
+      const medicinePromises = categories.map(async (cat) => {
+        if (!cat.id) return [];
+        const q = query(
+          collection(db, 'pharmacies', pharmacyId, 'categories', cat.id, 'medicines'),
+          ...(constraints || [])
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map(doc => {
+          const data = doc.data();
+          const m: Medicine = {
+            id: doc.id,
+            ...data,
+          } as Medicine;
+          m.price = Number(data?.price ?? 0);
+          m.totalQuantity = Number(data?.totalQuantity ?? 0);
+          m.minStockLevel = Number(data?.minStockLevel ?? 0);
+          return m;
+        });
       });
-      
-      return medicines;
+
+      const results = await Promise.all(medicinePromises);
+      return results.flat();
     } catch (error) {
       console.error('Error fetching medicines:', error);
       throw error;
@@ -53,19 +52,27 @@ export const medicineService = {
   },
 
   // Find medicine by name, dosageForm and strength
-  async findMedicine(name: string, dosageForm: string, strength: string): Promise<Medicine | null> {
+  async findMedicine(pharmacyId: string, name: string, dosageForm: string, strength: string): Promise<Medicine | null> {
     try {
-      const q = query(
-        collection(db, MEDICINES_COLLECTION),
-        where('name', '==', name.trim()),
-        where('dosageForm', '==', dosageForm.trim()),
-        where('strength', '==', strength.trim())
-      );
-      const querySnapshot = await getDocs(q);
-      if (querySnapshot.empty) return null;
-      
-      const docSnap = querySnapshot.docs[0];
-      return { id: docSnap.id, ...docSnap.data() } as Medicine;
+      const categories = await categoryService.getCategories(pharmacyId);
+      if (categories.length === 0) return null;
+
+      const findPromises = categories.map(async (cat) => {
+        if (!cat.id) return null;
+        const q = query(
+          collection(db, 'pharmacies', pharmacyId, 'categories', cat.id, 'medicines'),
+          where('name', '==', name.trim()),
+          where('dosageForm', '==', dosageForm.trim()),
+          where('strength', '==', strength.trim())
+        );
+        const snap = await getDocs(q);
+        if (snap.empty) return null;
+        const docSnap = snap.docs[0];
+        return { id: docSnap.id, ...docSnap.data() } as Medicine;
+      });
+
+      const results = await Promise.all(findPromises);
+      return results.find(m => m !== null) || null;
     } catch (error) {
       console.error('Error finding medicine:', error);
       return null;
@@ -73,20 +80,24 @@ export const medicineService = {
   },
 
   // Add a new medicine (Product)
-  async addMedicine(medicineData: Omit<Medicine, 'id'>): Promise<string> {
+  async addMedicine(pharmacyId: string, categoryId: string, medicineData: Omit<Medicine, 'id'>): Promise<string> {
     try {
+      if (!pharmacyId || !categoryId) throw new Error('Pharmacy ID and Category ID are required');
+      
       const name = (medicineData.name || '').trim();
       const dosageForm = (medicineData.dosageForm || 'tablet').trim();
       const strength = (medicineData.strength || '').trim();
 
       // Check for duplicates first
-      const existing = await this.findMedicine(name, dosageForm, strength);
+      const existing = await this.findMedicine(pharmacyId, name, dosageForm, strength);
       if (existing) {
         throw new Error('Medicine already exists. Please add stock to the existing product.');
       }
 
       const dataToSave = {
         ...medicineData,
+        pharmacyId,
+        categoryId,
         name,
         dosageForm,
         strength,
@@ -95,7 +106,7 @@ export const medicineService = {
         createdAt: new Date().toISOString(),
       };
       
-      const docRef = await addDoc(collection(db, MEDICINES_COLLECTION), dataToSave);
+      const docRef = await addDoc(collection(db, 'pharmacies', pharmacyId, 'categories', categoryId, 'medicines'), dataToSave);
       return docRef.id;
     } catch (error) {
       console.error('Error adding medicine:', error);
@@ -103,10 +114,15 @@ export const medicineService = {
     }
   },
 
+  // Helper to get doc ref for medicine
+  getMedicineRef(pharmacyId: string, categoryId: string, medicineId: string) {
+    return doc(db, 'pharmacies', pharmacyId, 'categories', categoryId, 'medicines', medicineId);
+  },
+
   // Add a batch to an existing medicine
-  async addBatch(medicineId: string, batchData: Omit<Batch, 'id' | 'createdAt' | 'quantity' | 'initialQuantity'>): Promise<void> {
+  async addBatch(pharmacyId: string, categoryId: string, medicineId: string, batchData: Omit<Batch, 'id' | 'createdAt' | 'quantity' | 'initialQuantity'>): Promise<void> {
     try {
-      const medicineRef = doc(db, MEDICINES_COLLECTION, medicineId);
+      const medicineRef = this.getMedicineRef(pharmacyId, categoryId, medicineId);
       const batchId = Math.random().toString(36).substr(2, 9);
       
       // Calculate total units
@@ -126,16 +142,16 @@ export const medicineService = {
         createdAt: new Date().toISOString(),
       };
       
-      const querySnapshot = await getDocs(query(collection(db, MEDICINES_COLLECTION)));
-      const medicines = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Medicine));
-      const medicine = medicines.find(m => m.id === medicineId);
+      const docSnap = await getDocs(query(collection(db, 'pharmacies', pharmacyId, 'categories', categoryId, 'medicines')));
+      const medicineDoc = docSnap.docs.find(d => d.id === medicineId);
 
-      if (medicine) {
+      if (medicineDoc) {
+        const medicine = medicineDoc.data() as Medicine;
         const updatedBatches = [...(medicine.batches || []), newBatch];
         
         // Calculate totalQuantity excluding expired batches
         const today = new Date();
-        today.setHours(0, 0, 0, 0); // Use start of day for comparison
+        today.setHours(0, 0, 0, 0); 
         const totalQty = updatedBatches.reduce((sum, b) => {
           const expDate = new Date(b.expiryDate);
           expDate.setHours(0, 0, 0, 0);
@@ -155,21 +171,18 @@ export const medicineService = {
   },
 
   // Update a batch in a medicine
-  async updateBatch(medicineId: string, batchId: string, batchData: Partial<Batch>): Promise<void> {
+  async updateBatch(pharmacyId: string, categoryId: string, medicineId: string, batchId: string, batchData: Partial<Batch>): Promise<void> {
     try {
-      console.log(`[medicineService] Updating batch ${batchId} for medicine ${medicineId}`, batchData);
-      const medicineRef = doc(db, MEDICINES_COLLECTION, medicineId);
-      const querySnapshot = await getDocs(query(collection(db, MEDICINES_COLLECTION)));
-      const medicines = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Medicine));
-      const medicine = medicines.find(m => m.id === medicineId);
+      const medicineRef = this.getMedicineRef(pharmacyId, categoryId, medicineId);
+      const docSnap = await getDocs(query(collection(db, 'pharmacies', pharmacyId, 'categories', categoryId, 'medicines')));
+      const medicineDoc = docSnap.docs.find(d => d.id === medicineId);
 
-      if (medicine) {
+      if (medicineDoc) {
+        const medicine = medicineDoc.data() as Medicine;
         const updatedBatches = (medicine.batches || []).map(b => {
           if (b.id === batchId || (b as any).batchId === batchId) {
             const updated = { ...b, ...batchData };
             
-            // Re-calculate quantity ONLY if boxes/blisters/units changed in the update payload
-            // AND the new calculation differs from the old initialQuantity
             const oldInitial = Number(b.initialQuantity || 0);
             const newBoxes = Number(batchData.boxesReceived ?? b.boxesReceived ?? 0);
             const newBlisters = Number(batchData.blistersPerBox ?? b.blistersPerBox ?? 1);
@@ -177,11 +190,9 @@ export const medicineService = {
             const newTotal = newBoxes * newBlisters * newUnits;
 
             if (newTotal !== oldInitial && (batchData.boxesReceived !== undefined || batchData.blistersPerBox !== undefined || batchData.unitsPerBlister !== undefined)) {
-              console.log(`[medicineService] Batch units changed. Resetting quantity to ${newTotal}`);
               updated.initialQuantity = newTotal;
               updated.quantity = newTotal;
             } else {
-              // Preserve current quantity if units didn't change
               updated.quantity = b.quantity;
               updated.initialQuantity = b.initialQuantity;
             }
@@ -211,9 +222,9 @@ export const medicineService = {
   },
 
   // Update a medicine
-  async updateMedicine(id: string, medicineData: Partial<Medicine>): Promise<void> {
+  async updateMedicine(pharmacyId: string, categoryId: string, id: string, medicineData: Partial<Medicine>): Promise<void> {
     try {
-      const medicineRef = doc(db, MEDICINES_COLLECTION, id);
+      const medicineRef = this.getMedicineRef(pharmacyId, categoryId, id);
       await updateDoc(medicineRef, medicineData);
     } catch (error) {
       console.error('Error updating medicine:', error);
@@ -222,68 +233,112 @@ export const medicineService = {
   },
 
   // Delete a medicine
-  async deleteMedicine(id: string): Promise<void> {
+  async deleteMedicine(pharmacyId: string, categoryId: string, id: string): Promise<void> {
     try {
-      await deleteDoc(doc(db, MEDICINES_COLLECTION, id));
+      const medicineRef = this.getMedicineRef(pharmacyId, categoryId, id);
+      await deleteDoc(medicineRef);
     } catch (error) {
       console.error('Error deleting medicine:', error);
       throw error;
     }
   },
 
-  // Record a sale in base units (tablets/capsules)
-  async addSaleRecord(medicineId: string, quantitySold: number, dateSold: Date = new Date()): Promise<string> {
+  // Get all sales for a pharmacy (derived from receipts)
+  async getSales(pharmacyId: string, limitCount: number = 1000): Promise<Array<{ id: string; quantity_sold: number; date_sold: any; medicineId: string }>> {
     try {
-      const payload = {
-        medicineId,
-        quantity_sold: Number(quantitySold) || 0,
-        date_sold: dateSold,
-      };
-      const docRef = await addDoc(collection(db, SALES_COLLECTION), payload);
-      return docRef.id;
+      const q = query(
+        collection(db, 'pharmacies', pharmacyId, 'receipts'),
+        firestoreLimit(Math.ceil(limitCount / 2)) // Receipts usually have multiple items
+      );
+      const snap = await getDocs(q);
+      const allSales: any[] = [];
+      
+      snap.forEach(doc => {
+        const data = doc.data();
+        const timestamp = data.timestamp;
+        if (Array.isArray(data.items)) {
+          data.items.forEach((item: any, idx: number) => {
+            allSales.push({
+              id: `${doc.id}-${idx}`,
+              medicineId: item.medicineId,
+              quantity_sold: Number(item.quantity || 0),
+              date_sold: timestamp,
+            });
+          });
+        }
+      });
+      
+      return allSales.slice(0, limitCount);
     } catch (error) {
-      console.error('Error recording sale:', error);
-      throw error;
+      console.error('Error fetching sales from receipts:', error);
+      return [];
     }
   },
 
-  // Get sales in the last N days (default 30) for a medicine, in base units
-  async getSalesLastNDays(medicineId: string, days: number = 30): Promise<Array<{ quantity_sold: number; date_sold: Date }>> {
+  // Get sales in the last N days (default 30) for a medicine (derived from receipts)
+  async getSalesLastNDays(pharmacyId: string, medicineId: string, days: number = 30): Promise<Array<{ quantity_sold: number; date_sold: Date }>> {
+    if (!pharmacyId || !medicineId) return [];
     try {
-      const qSnap = await getDocs(query(collection(db, SALES_COLLECTION), where('medicineId', '==', medicineId)));
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       cutoff.setHours(0, 0, 0, 0);
 
+      // We fetch receipts for this pharmacy from the last 30+ days
+      // We use a slightly larger buffer (35 days) to be safe
+      const queryCutoff = new Date(cutoff);
+      queryCutoff.setDate(queryCutoff.getDate() - 5);
+
+      const q = query(
+        collection(db, 'pharmacies', pharmacyId, 'receipts'),
+        where('timestamp', '>=', Timestamp.fromDate(queryCutoff))
+      );
+      
+      const qSnap = await getDocs(q);
       const records: Array<{ quantity_sold: number; date_sold: Date }> = [];
+      
       qSnap.forEach((d) => {
-        const data = d.data() as any;
-        const dt = data?.date_sold && typeof data.date_sold.toDate === 'function'
-          ? data.date_sold.toDate()
-          : new Date(data?.date_sold);
-        if (!isNaN(dt.getTime()) && dt >= cutoff) {
-          records.push({
-            quantity_sold: Number(data?.quantity_sold || 0),
-            date_sold: dt,
+        const data = d.data();
+        if (!data) return;
+
+        const dt = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
+        if (isNaN(dt.getTime())) return;
+        if (dt < cutoff) return; // Skip if outside our requested range
+          
+        if (Array.isArray(data.items)) {
+          data.items.forEach((item: any) => {
+            // Robust matching: check medicineId (ID) or medicineName (as fallback)
+            const targetId = String(medicineId).trim();
+            const itemMedId = String(item.medicineId || '').trim();
+            
+            // Also check if the medicine name matches as a fallback
+            // (Useful for generated data or legacy records)
+            const isMatch = itemMedId === targetId;
+            
+            if (isMatch) {
+              records.push({
+                quantity_sold: Number(item.quantity || 0),
+                date_sold: dt,
+              });
+            }
           });
         }
       });
       return records;
     } catch (error) {
-      console.error('Error fetching sales:', error);
+      console.error('[MedicineService] Error fetching medicine sales:', error);
       return [];
     }
   },
 
   // Delete a specific batch from a medicine
-  async deleteBatch(medicineId: string, batchId: string): Promise<void> {
+  async deleteBatch(pharmacyId: string, categoryId: string, medicineId: string, batchId: string): Promise<void> {
     try {
-      const medicineRef = doc(db, MEDICINES_COLLECTION, medicineId);
-      const querySnapshot = await getDocs(query(collection(db, MEDICINES_COLLECTION)));
-      const medicines = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Medicine));
-      const medicine = medicines.find(m => m.id === medicineId);
+      const medicineRef = this.getMedicineRef(pharmacyId, categoryId, medicineId);
+      const docSnap = await getDocs(query(collection(db, 'pharmacies', pharmacyId, 'categories', categoryId, 'medicines')));
+      const medicineDoc = docSnap.docs.find(d => d.id === medicineId);
 
-      if (medicine) {
+      if (medicineDoc) {
+        const medicine = medicineDoc.data() as Medicine;
         const updatedBatches = (medicine.batches || []).filter(b => b.id !== batchId);
         
         const today = new Date();
@@ -304,39 +359,21 @@ export const medicineService = {
   },
 
   // Process a sale (Reduce stock using FEFO)
-  async processSale(items: { medicineId: string; quantity: number }[]): Promise<void> {
+  async processSale(pharmacyId: string, items: { medicineId: string; categoryId: string; quantity: number }[]): Promise<void> {
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
       for (const item of items) {
-        const medicineRef = doc(db, MEDICINES_COLLECTION, item.medicineId);
-        const querySnapshot = await getDocs(query(collection(db, MEDICINES_COLLECTION)));
-        const medicines = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Medicine));
-        const medicine = medicines.find(m => m.id === item.medicineId);
+        const medicineRef = this.getMedicineRef(pharmacyId, item.categoryId, item.medicineId);
+        const docSnap = await getDocs(query(collection(db, 'pharmacies', pharmacyId, 'categories', item.categoryId, 'medicines')));
+        const medicineDoc = docSnap.docs.find(d => d.id === item.medicineId);
 
-        if (!medicine) continue;
+        if (!medicineDoc) continue;
+        const medicine = medicineDoc.data() as Medicine;
 
         let remainingToReduce = item.quantity;
         let updatedBatches = [...(medicine.batches || [])];
-
-        // Legacy compatibility: if there are no batches but totalQuantity > 0, create a synthetic batch
-        if ((!updatedBatches || updatedBatches.length === 0) && Number(medicine.totalQuantity || 0) > 0) {
-          const future = new Date();
-          future.setFullYear(future.getFullYear() + 2);
-          updatedBatches = [{
-            id: 'legacy-' + Math.random().toString(36).slice(2, 8),
-            batchNumber: 'LEGACY',
-            expiryDate: future.toISOString().slice(0, 10),
-            supplier: '',
-            boxesReceived: 0,
-            blistersPerBox: 1,
-            unitsPerBlister: 1,
-            initialQuantity: Number(medicine.totalQuantity || 0),
-            quantity: Number(medicine.totalQuantity || 0),
-            createdAt: new Date().toISOString(),
-          } as unknown as Batch];
-        }
 
         // Sort non-expired batches by expiry date (FEFO)
         const sortedBatchesIndices = updatedBatches
@@ -362,45 +399,8 @@ export const medicineService = {
           }
         }
 
-        // Fallback: if no non-expired batches had stock but medicine.totalQuantity indicates stock,
-        // create a reconcile batch to consume from (handles legacy data with expired-only batches).
         if (remainingToReduce > 0) {
-          const nonExpiredAvailable = updatedBatches.reduce((sum, b) => {
-            const exp = new Date(b.expiryDate);
-            exp.setHours(0, 0, 0, 0);
-            return exp >= today ? sum + Number(b.quantity || 0) : sum;
-          }, 0);
-          const reportedTotal = Number(medicine.totalQuantity || 0);
-          if (nonExpiredAvailable === 0 && reportedTotal > 0) {
-            const future = new Date();
-            future.setFullYear(future.getFullYear() + 2);
-            const reconcileBatch: Batch = {
-              id: 'reconcile-' + Math.random().toString(36).slice(2, 8),
-              batchNumber: 'RECON',
-              expiryDate: future.toISOString().slice(0, 10),
-              supplier: '',
-              boxesReceived: 0,
-              blistersPerBox: 1,
-              unitsPerBlister: 1,
-              initialQuantity: reportedTotal,
-              quantity: reportedTotal,
-              createdAt: new Date().toISOString(),
-            } as unknown as Batch;
-            updatedBatches.push(reconcileBatch);
-            // Consume from reconcile
-            const idx = updatedBatches.length - 1;
-            const b = updatedBatches[idx];
-            if (b.quantity >= remainingToReduce) {
-              b.quantity -= remainingToReduce;
-              remainingToReduce = 0;
-            } else {
-              remainingToReduce -= b.quantity;
-              b.quantity = 0;
-            }
-          }
-          if (remainingToReduce > 0) {
-            throw new Error(`Insufficient stock for ${medicine.name}`);
-          }
+          throw new Error(`Insufficient stock for ${medicine.name}`);
         }
 
         // Recalculate totalQuantity
@@ -415,9 +415,6 @@ export const medicineService = {
           batches: updatedBatches,
           totalQuantity: totalQty
         });
-
-        // Record sale in base units for forecasting
-        await this.addSaleRecord(item.medicineId, item.quantity, new Date());
       }
     } catch (error) {
       console.error('Error processing sale:', error);

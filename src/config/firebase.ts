@@ -1,21 +1,17 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
+import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyBBZWPzpJ_z4BlNSnAJb2ER8cIszTDsdvU", 
+  authDomain: "pharmacyinventorysystem-c8c47.firebaseapp.com", 
+  projectId: "pharmacyinventorysystem-c8c47", 
+  storageBucket: "pharmacyinventorysystem-c8c47.firebasestorage.app", 
+  messagingSenderId: "155832331024", 
+  appId: "1:155832331024:web:7bac0f095823c1d4e8d395", 
+  measurementId: "G-LD5G7NEJJ9" 
 };
-
-// Validate Firebase config
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.warn('[Firebase] Config is missing credentials. Using fallback mode.');
-}
 
 console.log('[Firebase] Initializing with projectId:', firebaseConfig.projectId);
 
@@ -23,6 +19,7 @@ console.log('[Firebase] Initializing with projectId:', firebaseConfig.projectId)
 let app;
 let auth;
 let db;
+let analytics;
 
 try {
   app = initializeApp(firebaseConfig);
@@ -32,21 +29,20 @@ try {
   db = getFirestore(app);
   console.log('[Firebase] Firestore initialized');
   
-  // Initialize Auth (with error handling)
-  try {
-    auth = getAuth(app);
-    console.log('[Firebase] Auth initialized successfully');
-  } catch (authError) {
-    console.warn('[Firebase] Auth initialization failed:', authError);
-    console.log('[Firebase] App will work in Firestore-only mode');
-    // Create a dummy auth object that won't crash the app
-    auth = null;
+  // Initialize Auth
+  auth = getAuth(app);
+  console.log('[Firebase] Auth initialized successfully');
+
+  // Initialize Analytics (only works in browser environments)
+  if (typeof window !== 'undefined') {
+    analytics = getAnalytics(app);
+    console.log('[Firebase] Analytics initialized');
   }
 } catch (error) {
   console.error('[Firebase] Initialization error:', error);
   throw error;
 }
 
-export { auth, db };
+export { auth, db, analytics };
 export default app;
 

@@ -33,8 +33,7 @@ export function Inventory({
   const [preselectedMedicineId, setPreselectedMedicineId] = useState(null);
   const safeMedicines = Array.isArray(medicines) ? medicines : [];
   const safeCategories = useMemo(() => {
-    const cats = Array.isArray(categories) ? categories : [];
-    return [...new Set(cats.filter(c => c && typeof c === 'string'))];
+    return Array.isArray(categories) ? categories : [];
   }, [categories]);
   const isStaff = (currentUser?.role === 'staff');
 
@@ -272,7 +271,7 @@ export function Inventory({
               >
                 <option value="All">All Categories</option>
                 {safeCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
                 ))}
               </select>
             </>

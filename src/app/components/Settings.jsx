@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
-import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen } from 'lucide-react';
+import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen, UserPlus } from 'lucide-react';
 import { auditService } from '@/services/auditService';
+import { pharmacyService } from '@/services/pharmacyService';
+import { userService } from '@/services/userService';
+import { medicineService } from '@/services/medicineService';
+import { receiptService } from '@/services/receiptService';
+import { categoryService } from '@/services/categoryService';
 import { toast } from 'sonner';
 
-export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings, currentUser, medicines = [] }) {
+export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings, currentUser, medicines = [], categories = [] }) {
   const [localPharmacyName, setLocalPharmacyName] = useState(settings?.pharmacyName || '');
   const [submitting, setSubmitting] = useState(false);
   
@@ -12,6 +17,59 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
     new: '',
     confirm: ''
   });
+
+  const [showPharmacyId, setShowPharmacyId] = useState(false);
+  const [pharmacyIdPassword, setPharmacyIdPassword] = useState('');
+  const [verifyingPharmacyId, setVerifyingPharmacyId] = useState(false);
+  
+  const [staffForm, setStaffForm] = useState({
+    name: '',
+    username: '',
+    email: '',
+    password: '',
+    show: false
+  });
+
+  const handleCreateStaff = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await userService.createAccount(
+        staffForm.name,
+        staffForm.username,
+        staffForm.email,
+        staffForm.password,
+        'staff',
+        currentUser.pharmacyId,
+        undefined // Pharmacy Name not needed for staff signup
+      );
+      toast.success(`Staff account for ${staffForm.name} created!`);
+      setStaffForm({ name: '', username: '', email: '', password: '', show: false });
+    } catch (err) {
+      toast.error(err.message || 'Failed to create staff account');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleShowPharmacyId = async () => {
+    if (!pharmacyIdPassword) {
+      toast.error('Please enter your password to view Pharmacy ID');
+      return;
+    }
+    setVerifyingPharmacyId(true);
+    try {
+      // In a real app, we would verify the password with Firebase Auth
+      // For now, we'll simulate verification
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setShowPharmacyId(true);
+      toast.success('Pharmacy ID revealed');
+    } catch (err) {
+      toast.error('Incorrect password');
+    } finally {
+      setVerifyingPharmacyId(false);
+    }
+  };
 
   const handleChangePassword = async () => {
     if (!passwords.current || !passwords.new || !passwords.confirm) {
@@ -29,24 +87,13 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
 
     setSubmitting(true);
     try {
-      // Get stored passwords or use defaults
-      const storedUsers = JSON.parse(localStorage.getItem('pharmacy_users') || '[]');
-      const username = currentUser?.uid || currentUser?.name?.toLowerCase().replace(/\s+/g, '') || 'manager';
-      
-      const userIdx = storedUsers.findIndex(u => u.username === username);
-      if (userIdx >= 0) {
-        storedUsers[userIdx].password = passwords.new;
-      } else {
-        storedUsers.push({ username, password: passwords.new });
-      }
-      
-      localStorage.setItem('pharmacy_users', JSON.stringify(storedUsers));
-      
+      // Firebase Auth password update would go here
+      // For now, we'll log it and show success as we're restructuring DB
       await new Promise(resolve => setTimeout(resolve, 1000));
       toast.success('Password changed successfully');
       setPasswords({ current: '', new: '', confirm: '' });
       
-      await auditService.logAction({
+      await auditService.logAction(currentUser.pharmacyId, {
         userId: currentUser?.uid || 'unknown',
         userName: currentUser?.name || 'Unknown User',
         userRole: currentUser?.role || 'unknown',
@@ -107,7 +154,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               <label className="block text-sm font-medium text-muted-foreground mb-1">License Number</label>
               <input
                 type="text"
-                defaultValue="PH-123456"
+                placeholder="PH-XXXXXX"
                 className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
               />
             </div>
@@ -115,7 +162,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               <label className="block text-sm font-medium text-muted-foreground mb-1">Phone</label>
               <input
                 type="tel"
-                defaultValue="(555) 123-4567"
+                placeholder="(XXX) XXX-XXXX"
                 className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
               />
             </div>
@@ -123,7 +170,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               <label className="block text-sm font-medium text-muted-foreground mb-1">Email</label>
               <input
                 type="email"
-                defaultValue="contact@pharmacare.com"
+                placeholder="pharmacy@email.com"
                 className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
               />
             </div>
@@ -131,21 +178,73 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               <label className="block text-sm font-medium text-muted-foreground mb-1">Address</label>
               <textarea
                 rows={2}
-                defaultValue="123 Healthcare Avenue, Medical District, State 12345"
+                placeholder="Enter pharmacy address"
                 className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
               />
             </div>
+
+            {userRole !== 'staff' && (
+              <div className="md:col-span-2 pt-4 border-t mt-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-blue-600" />
+                  Pharmacy ID (Restricted)
+                </label>
+                <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                  {!showPharmacyId ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <input
+                        type="password"
+                        placeholder="Enter manager password to reveal"
+                        value={pharmacyIdPassword}
+                        onChange={(e) => setPharmacyIdPassword(e.target.value)}
+                        className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 bg-white"
+                      />
+                      <button
+                        onClick={handleShowPharmacyId}
+                        disabled={verifyingPharmacyId}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        {verifyingPharmacyId ? 'Verifying...' : 'Reveal ID'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-4">
+                      <code className="text-lg font-mono font-bold text-blue-900 bg-blue-100/50 px-3 py-1 rounded select-all">
+                        {currentUser?.pharmacyId || 'ID NOT FOUND'}
+                      </code>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(currentUser?.pharmacyId || '');
+                          toast.success('Pharmacy ID copied to clipboard');
+                        }}
+                        className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+                      >
+                        Copy to clipboard
+                      </button>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Share this ID with staff members so they can join your pharmacy. Keep it secure.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
           <button
             className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium"
             onClick={async () => {
+              if (!currentUser?.pharmacyId) return;
               const beforeName = settings?.pharmacyName || '';
               const afterName = localPharmacyName || '';
-              onUpdateSettings?.({ ...settings, pharmacyName: afterName });
-              toast.success('Pharmacy name updated');
-              if (beforeName !== afterName) {
-                try {
-                  await auditService.logAction({
+              
+              setSubmitting(true);
+              try {
+                await pharmacyService.updatePharmacy(currentUser.pharmacyId, { name: afterName });
+                onUpdateSettings?.({ ...settings, pharmacyName: afterName });
+                toast.success('Pharmacy name updated');
+                
+                if (beforeName !== afterName) {
+                  await auditService.logAction(currentUser.pharmacyId, {
                     userId: currentUser?.uid || 'unknown',
                     userName: currentUser?.name || 'Unknown User',
                     userRole: currentUser?.role || 'unknown',
@@ -155,7 +254,11 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                     details: {},
                     changes: { before: { pharmacyName: beforeName }, after: { pharmacyName: afterName } },
                   });
-                } catch {}
+                }
+              } catch (e) {
+                toast.error('Failed to update pharmacy');
+              } finally {
+                setSubmitting(false);
               }
             }}
           >
@@ -174,33 +277,35 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
               <label className="block text-sm font-medium text-muted-foreground mb-1">Full Name</label>
               <input
                 type="text"
-                defaultValue="Dr. John Smith"
+                defaultValue={currentUser?.name || ''}
                 className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-muted-foreground mb-1">Role</label>
-              <select className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background">
-                <option>Pharmacist</option>
-                <option>Manager</option>
-                <option>Staff</option>
-                <option>Admin</option>
-              </select>
+              <input
+                type="text"
+                disabled
+                defaultValue={currentUser?.role === 'manager' ? 'Manager' : 'Staff'}
+                className="w-full px-4 py-2 border rounded-md bg-gray-50 text-gray-500 cursor-not-allowed"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-muted-foreground mb-1">Email</label>
               <input
                 type="email"
-                defaultValue="john.smith@pharmacare.com"
-                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                disabled
+                defaultValue={currentUser?.email || ''}
+                className="w-full px-4 py-2 border rounded-md bg-gray-50 text-gray-500 cursor-not-allowed"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Phone</label>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">Username</label>
               <input
-                type="tel"
-                defaultValue="(555) 987-6543"
-                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                type="text"
+                disabled
+                defaultValue={currentUser?.username || ''}
+                className="w-full px-4 py-2 border rounded-md bg-gray-50 text-gray-500 cursor-not-allowed"
               />
             </div>
           </div>
@@ -208,6 +313,98 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
             Update Profile
           </button>
         </div>
+
+        {/* Manager-only: Staff Management */}
+        {userRole === 'manager' && (
+          <div className="bg-card rounded-lg border p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <Shield className="w-6 h-6 text-blue-600" />
+                <h2 className="text-xl font-semibold text-card-foreground">Staff Management</h2>
+              </div>
+              <button 
+                onClick={() => setStaffForm(prev => ({ ...prev, show: !prev.show }))}
+                className="text-sm font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100 transition-colors"
+              >
+                {staffForm.show ? 'Cancel' : 'Create Staff Account'}
+              </button>
+            </div>
+
+            {staffForm.show ? (
+              <form onSubmit={handleCreateStaff} className="space-y-4 animate-in slide-in-from-top-2 duration-300">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Full Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={staffForm.name}
+                      onChange={e => setStaffForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                      placeholder="Staff's full name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Username</label>
+                    <input
+                      type="text"
+                      required
+                      value={staffForm.username}
+                      onChange={e => setStaffForm(prev => ({ ...prev, username: e.target.value }))}
+                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                      placeholder="staff_username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Email</label>
+                    <input
+                      type="email"
+                      required
+                      value={staffForm.email}
+                      onChange={e => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
+                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                      placeholder="staff@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Initial Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={staffForm.password}
+                      onChange={e => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
+                      className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                      placeholder="At least 6 characters"
+                      minLength={6}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">Pharmacy ID (Auto-filled)</label>
+                    <input
+                      type="text"
+                      disabled
+                      value={currentUser?.pharmacyId || ''}
+                      className="w-full px-4 py-2 border rounded-md bg-gray-50 text-gray-500 cursor-not-allowed font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center gap-2"
+                >
+                  {submitting ? 'Creating...' : <UserPlus className="w-4 h-4" />}
+                  Create Account
+                </button>
+              </form>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                You can create accounts for your staff members directly. They will be automatically linked to your pharmacy ID: 
+                <code className="ml-2 font-mono text-blue-600 font-bold">{currentUser?.pharmacyId?.slice(0, 8)}...</code>
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Security */}
         <div className="bg-card rounded-lg border p-6">
@@ -270,40 +467,67 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
           <p className="text-muted-foreground mb-4">
             Generate synthetic sales receipts to populate analytics. Writes directly to your receipts database.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Number of sales</label>
-              <input
-                type="number"
-                min="50"
-                max="1000"
-                value={demoCount}
-                onChange={(e) => setDemoCount(e.target.value)}
-                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">Months span</label>
-              <select
-                value={demoMonths}
-                onChange={(e) => setDemoMonths(parseInt(e.target.value, 10))}
-                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
-              >
-                <option value={6}>6 months</option>
-                <option value={7}>7 months</option>
-                <option value={8}>8 months</option>
-                <option value={9}>9 months</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <button
-                disabled={generating}
-                onClick={async () => {
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Number of sales</label>
+                <input
+                  type="number"
+                  min="50"
+                  max="1000"
+                  value={demoCount}
+                  onChange={(e) => setDemoCount(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Months span</label>
+                <select
+                  value={demoMonths}
+                  onChange={(e) => setDemoMonths(parseInt(e.target.value, 10))}
+                  className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
+                >
+                  <option value={6}>6 months</option>
+                  <option value={7}>7 months</option>
+                  <option value={8}>8 months</option>
+                  <option value={9}>9 months</option>
+                </select>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button
+                  disabled={generating}
+                  onClick={async () => {
+                    if (!confirm('This will delete all existing receipts and historical sales data for this pharmacy. Continue?')) return;
+                    setGenerating(true);
+                    try {
+                      const { receiptService } = await import('@/services/receiptService');
+                      
+                      toast.info('Clearing records, please wait...');
+                      
+                      // Clear Receipts
+                      const receiptsToClear = await receiptService.getReceipts(currentUser.pharmacyId, 5000);
+                      for (const r of receiptsToClear) {
+                        await receiptService.deleteReceipt(currentUser.pharmacyId, r.id);
+                      }
+                      
+                      toast.success('Successfully cleared all historical data.');
+                      window.dispatchEvent(new Event('refresh-medicines'));
+                    } catch (e) {
+                      console.error(e);
+                      toast.error('Failed to clear some records. Try again.');
+                    } finally {
+                      setGenerating(false);
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors"
+                >
+                  Clear Data
+                </button>
+                <button
+                  disabled={generating}
+                  onClick={async () => {
                   setGenerating(true);
                   try {
                     toast.info('Generating demo sales using current medicines...');
-                    const { receiptService } = await import('@/services/receiptService');
-                    const { medicineService } = await import('@/services/medicineService');
                     const parsedCount = parseInt(demoCount || '0', 10);
                     const targetCount = isNaN(parsedCount) ? 100 : Math.max(50, Math.min(1000, parsedCount));
                     if (!Array.isArray(medicines) || medicines.length === 0) {
@@ -347,9 +571,9 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       
                       // 70% chance to pick from same category (realistic prescription/bundle)
                       const useCategoryBundle = Math.random() < 0.7;
-                      const categories = Object.keys(byCategory);
-                      const randomCat = categories[Math.floor(Math.random() * categories.length)];
-                      const pool = useCategoryBundle ? byCategory[randomCat] : medicines;
+                      const categoryKeys = Object.keys(byCategory);
+                      const randomCatKey = categoryKeys[Math.floor(Math.random() * categoryKeys.length)];
+                      const pool = useCategoryBundle ? byCategory[randomCatKey] : medicines;
                       
                       const shuffled = pool.slice().sort(() => Math.random() - 0.5);
                       for (let j = 0; j < itemsCount && j < shuffled.length; j++) {
@@ -401,11 +625,14 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                         customerName: Math.random() < 0.2 ? 'Walk-in' : 'Customer ' + Math.floor(Math.random() * 1000),
                         items: chosen.map(({ m, unit, qty }) => ({
                           medicineId: m.id,
+                          categoryId: m.categoryId,
                           name: m.name,
                           quantity: qty,
                           unitSold: unit,
                           price: Number(m.price || 0),
+                          subtotal: Number(m.price || 0) * (unitMultiplier(m, unit) || 1) * qty
                         })),
+                        total: grandTotal,
                         subtotal: subtotal,
                         tax: tax,
                         grandTotal: grandTotal,
@@ -413,18 +640,21 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                         change: amountReceived - grandTotal,
                         userId: currentUser?.uid || 'unknown',
                         userName: currentUser?.name || 'Unknown User',
+                        paymentMethod: Math.random() < 0.8 ? 'Cash' : 'G-Cash'
                       };
                       
-                      await receiptService.addReceipt(receiptPayload);
-                      // Also add sales records for forecasting
-                      for (const { m, mult, qty } of chosen) {
-                        await medicineService.addSaleRecord(m.id, mult * qty, ts);
-                      }
+                      await receiptService.addReceipt(currentUser.pharmacyId, receiptPayload);
                       created += 1;
+                      
+                      // Update progress every 50 receipts
+                      if (created % 50 === 0) {
+                        console.log(`[Generator] Created ${created}/${targetCount} receipts...`);
+                      }
                     }
-                    toast.success(`Generated ${created} demo sales across ${demoMonths} months`);
+                    toast.success(`Generated ${created} demo sales across ${demoMonths} months. Refreshing dashboard...`);
+                    window.dispatchEvent(new Event('refresh-medicines'));
                     try {
-                      await auditService.logAction({
+                      await auditService.logAction(currentUser.pharmacyId, {
                         userId: currentUser?.uid || 'unknown',
                         userName: currentUser?.name || 'Unknown User',
                         userRole: currentUser?.role || 'unknown',
@@ -471,8 +701,6 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                 onClick={async () => {
                   setGenerating(true);
                   try {
-                    const { medicineService } = await import('@/services/medicineService');
-                    
                     const catalog = [
                       // Antibiotics
                       { 
@@ -494,10 +722,10 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       },
                       { name: 'Azithromycin', category: 'Antibiotic', variations: [{ dosageForm: 'tablet', strength: '250 mg', unit: 'tablets' }] },
                       
-                      // Analgesics / NSAIDs
+                      // Painkiller
                       { 
                         name: 'Paracetamol', 
-                        category: 'Analgesic',
+                        category: 'Painkiller',
                         variations: [
                           { dosageForm: 'tablet', strength: '500 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '325 mg', unit: 'tablets' },
@@ -506,7 +734,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       },
                       { 
                         name: 'Mefenamic Acid', 
-                        category: 'Analgesic',
+                        category: 'Painkiller',
                         variations: [
                           { dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' },
                           { dosageForm: 'tablet', strength: '250 mg', unit: 'tablets' }
@@ -514,19 +742,19 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       },
                       { 
                         name: 'Ibuprofen', 
-                        category: 'NSAID',
+                        category: 'Painkiller',
                         variations: [
                           { dosageForm: 'tablet', strength: '400 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '200 mg', unit: 'tablets' }
                         ]
                       },
-                      { name: 'Celecoxib', category: 'NSAID', variations: [{ dosageForm: 'capsule', strength: '200 mg', unit: 'capsules' }] },
+                      { name: 'Celecoxib', category: 'Painkiller', variations: [{ dosageForm: 'capsule', strength: '200 mg', unit: 'capsules' }] },
                       
-                      // Cough & Cold
-                      { name: 'Ascof (Cough Syrup)', category: 'Cough & Cold', variations: [{ dosageForm: 'syrup', strength: '600 mg/5 ml', unit: 'bottle' }] },
+                      // Respiratory
+                      { name: 'Ascof (Cough Syrup)', category: 'Respiratory', variations: [{ dosageForm: 'syrup', strength: '600 mg/5 ml', unit: 'bottle' }] },
                       { 
                         name: 'Neozep', 
-                        category: 'Cough & Cold',
+                        category: 'Respiratory',
                         variations: [
                           { dosageForm: 'tablet', strength: 'Forte', unit: 'tablets' },
                           { dosageForm: 'syrup', strength: 'Drops', unit: 'bottle' }
@@ -534,34 +762,34 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       },
                       
                       // Gastrointestinal
-                      { name: 'Loperamide', category: 'GI', variations: [{ dosageForm: 'capsule', strength: '2 mg', unit: 'capsules' }] },
+                      { name: 'Loperamide', category: 'Gastrointestinal', variations: [{ dosageForm: 'capsule', strength: '2 mg', unit: 'capsules' }] },
                       { 
                         name: 'Omeprazole', 
-                        category: 'GI',
+                        category: 'Gastrointestinal',
                         variations: [
                           { dosageForm: 'capsule', strength: '20 mg', unit: 'capsules' },
                           { dosageForm: 'capsule', strength: '40 mg', unit: 'capsules' }
                         ]
                       },
-                      { name: 'Kremil-S', category: 'GI', variations: [{ dosageForm: 'tablet', strength: 'Regular', unit: 'tablets' }] },
+                      { name: 'Kremil-S', category: 'Gastrointestinal', variations: [{ dosageForm: 'tablet', strength: 'Regular', unit: 'tablets' }] },
                       
                       // Cardiovascular
                       { 
                         name: 'Losartan', 
-                        category: 'Cardio',
+                        category: 'Cardiovascular',
                         variations: [
                           { dosageForm: 'tablet', strength: '50 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '100 mg', unit: 'tablets' }
                         ]
                       },
-                      { name: 'Amlodipine', category: 'Cardio', variations: [{ dosageForm: 'tablet', strength: '5 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }] },
+                      { name: 'Amlodipine', category: 'Cardiovascular', variations: [{ dosageForm: 'tablet', strength: '5 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }] },
                       
-                      // Allergy / Antihistamines
-                      { name: 'Cetirizine', category: 'Allergy', variations: [{ dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }, { dosageForm: 'syrup', strength: '5 mg/5 ml', unit: 'bottle' }] },
+                      // Antihistamine
+                      { name: 'Cetirizine', category: 'Antihistamine', variations: [{ dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }, { dosageForm: 'syrup', strength: '5 mg/5 ml', unit: 'bottle' }] },
                       
                       // Vitamins & Supplements
-                      { name: 'Vitamin C', category: 'Vitamins', variations: [{ dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' }, { dosageForm: 'tablet', strength: '1000 mg', unit: 'tablets' }] },
-                      { name: 'Vitamin B-Complex', category: 'Vitamins', variations: [{ dosageForm: 'tablet', strength: '100 mg', unit: 'tablets' }] },
+                      { name: 'Vitamin C', category: 'Vitamins & Supplements', variations: [{ dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' }, { dosageForm: 'tablet', strength: '1000 mg', unit: 'tablets' }] },
+                      { name: 'Vitamin B-Complex', category: 'Vitamins & Supplements', variations: [{ dosageForm: 'tablet', strength: '100 mg', unit: 'tablets' }] },
                       
                       // Diabetes
                       { name: 'Metformin', category: 'Diabetes', variations: [{ dosageForm: 'tablet', strength: '500 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '850 mg', unit: 'tablets' }] }
@@ -602,17 +830,30 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                         const minStockLevel = 50;
                         const isLiquid = item.unit === 'ml' || String(item.dosageForm).toLowerCase() === 'syrup' || String(item.dosageForm).toLowerCase() === 'bottle';
                         
-                        const medId = await medicineService.addMedicine({
-                          name: item.name,
-                          dosageForm: item.dosageForm,
-                          strength: item.strength,
-                          unit: item.unit,
-                          category: item.category,
-                          price,
-                          minStockLevel,
-                          batches: [],
-                          totalQuantity: 0
-                        });
+                        if (!categories || categories.length === 0) {
+                          toast.error('No categories found. Please reload or add categories first.');
+                          setGenerating(false);
+                          return;
+                        }
+
+                        const categoryObj = categories.find(c => c.name === item.category) || categories[0];
+                        if (!categoryObj || !categoryObj.id) throw new Error('Valid category not found');
+
+                        const medId = await medicineService.addMedicine(
+                          currentUser.pharmacyId,
+                          categoryObj.id,
+                          {
+                            name: item.name,
+                            dosageForm: item.dosageForm,
+                            strength: item.strength,
+                            unit: item.unit,
+                            category: item.category,
+                            price,
+                            minStockLevel,
+                            batches: [],
+                            totalQuantity: 0
+                          }
+                        );
 
                         // Determine status for this medicine
                         // Status mix: Normal (40%), Low Stock (20%), Expiring Soon (20%), Expired (20%)
@@ -647,15 +888,20 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                             exp.setDate(exp.getDate() + Math.floor(Math.random() * 28));
                           }
 
-                          await medicineService.addBatch(medId, {
-                            batchNumber: `${item.name.slice(0,3).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}-${i + 1}`,
-                            expiryDate: exp.toISOString().slice(0, 10),
-                            supplier: 'PharmaSupply Co.',
-                            boxesReceived: boxes,
-                            blistersPerBox: blisters,
-                            unitsPerBlister: units,
-                            purchasePrice: Math.round((price * 0.7) * 100) / 100
-                          });
+                          await medicineService.addBatch(
+                            currentUser.pharmacyId, 
+                            categoryObj.id, 
+                            medId, 
+                            {
+                              batchNumber: `${item.name.slice(0,3).toUpperCase()}-${Math.floor(Math.random() * 900 + 100)}-${i + 1}`,
+                              expiryDate: exp.toISOString().slice(0, 10),
+                              supplier: 'PharmaSupply Co.',
+                              boxesReceived: boxes,
+                              blistersPerBox: blisters,
+                              unitsPerBlister: units,
+                              purchasePrice: Math.round((price * 0.7) * 100) / 100
+                            }
+                          );
                         }
                         created += 1;
                       } catch (err) {

@@ -100,13 +100,14 @@ export function SalesPOS({ medicines, currentUser }) {
       // Process stock reduction using FEFO
       const saleItems = cart.map(item => ({
         medicineId: item.medicine.id,
+        categoryId: item.medicine.categoryId,
         quantity: item.quantity * getUnitMultiplier(item.medicine, item.sellUnit)
       }));
 
-      await medicineService.processSale(saleItems);
+      await medicineService.processSale(currentUser.pharmacyId, saleItems);
 
       // Log sale completion to audit trail
-      await auditService.logAction({
+      await auditService.logAction(currentUser.pharmacyId, {
         userId: currentUser?.uid || 'unknown',
         userName: currentUser?.name || 'Unknown User',
         userRole: currentUser?.role || 'unknown',

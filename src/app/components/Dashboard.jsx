@@ -48,18 +48,20 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   };
  
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     (async () => {
       const svc = await loadReceiptService();
       try {
         if (svc) {
-          const data = await svc.getRecentReceipts(500);
+          // Pass 0 to remove limit and get all receipts for accurate historical trends
+          const data = await svc.getReceipts(currentUser.pharmacyId, 0);
           setReceipts(data || []);
         }
       } catch {
         setReceipts([]);
       }
     })();
-  }, []);
+  }, [currentUser?.pharmacyId]);
 
   // Ensure categories is always an array and unique
   const safeCategories = useMemo(() => {
@@ -123,15 +125,16 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   // New: recent audit logs
   const [recentLogs, setRecentLogs] = useState([]);
   useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
     (async () => {
       try {
-        const logs = await auditService.getLogs({ limit: 20 });
+        const logs = await auditService.getLogs(currentUser.pharmacyId, 20);
         setRecentLogs(Array.isArray(logs) ? logs : []);
       } catch {
         setRecentLogs([]);
       }
     })();
-  }, []);
+  }, [currentUser?.pharmacyId]);
 
   const last7DaysRevenueStrict = useMemo(() => {
     return dashboardBackend.getLast7DaysRevenueStrict(receipts);
@@ -196,7 +199,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         const startPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const endPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
         // Fetch up to 60 days then filter to previous month
-        const records = await (await import('@/services/medicineService')).medicineService.getSalesLastNDays(med.id, 60);
+        const records = await (await import('@/services/medicineService')).medicineService.getSalesLastNDays(currentUser.pharmacyId, med.id, 60);
         if (!mounted) return;
         
         const { series, forecastData } = dashboardBackend.calculateMedicineForecast(records, med, startPrevMonth, endPrevMonth);

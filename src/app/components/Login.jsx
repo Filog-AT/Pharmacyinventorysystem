@@ -1,55 +1,58 @@
 import { useState } from 'react';
-import { User, Lock, Building2, Eye, EyeOff } from 'lucide-react';
-
-const users = [
-  {
-    username: 'manager',
-    password: 'manager123',
-    role: 'manager',
-    name: 'John Smith',
-    title: 'Manager',
-    permissions: ['Dashboard', 'Inventory', 'Activity Logs', 'Settings']
-  },
-  {
-    username: 'staff',
-    password: 'staff123',
-    role: 'staff',
-    name: 'Mike Wilson',
-    title: 'Staff Member',
-    permissions: ['Inventory', 'Receipts', 'Activity Logs']
-  }
-];
+import { User, Lock, Building2, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle } from 'lucide-react';
+import { userService } from '@/services/userService';
+import { toast } from 'sonner';
 
 export function Login({ onLogin, pharmacyName }) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [showCredentials, setShowCredentials] = useState(false);
+  const [name, setName] = useState('');
+  const [pharmacyNameInput, setPharmacyNameInput] = useState('');
+  const [role, setRole] = useState('manager');
+  const [pharmacyIdInput, setPharmacyIdInput] = useState(''); // For staff signing up
+  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setLoading(true);
 
-    // Check for stored user overrides
-    const storedUsers = JSON.parse(localStorage.getItem('pharmacy_users') || '[]');
-    const storedUser = storedUsers.find(u => u.username === username);
-    
-    const baseUser = users.find(u => u.username === username);
-    
-    if (storedUser && storedUser.password === password) {
-      onLogin({ ...baseUser, ...storedUser });
-    } else if (baseUser && baseUser.password === password && !storedUser) {
-      onLogin(baseUser);
-    } else {
-      setError('Invalid username or password');
+    try {
+      if (isSignUp) {
+        if (role === 'staff') {
+          const exists = await userService.checkPharmacyExists(pharmacyIdInput);
+          if (!exists) {
+            toast.error('Invalid Pharmacy ID. Please check with your manager.');
+            setLoading(false);
+            return;
+          }
+        }
+
+        const profile = await userService.createAccount(
+          name, 
+          username,
+          email, 
+          password, 
+          role, 
+          role === 'staff' ? pharmacyIdInput : undefined,
+          role === 'manager' ? pharmacyNameInput : undefined
+        );
+        toast.success('Account created successfully!');
+        onLogin(profile);
+      } else {
+        const profile = await userService.signIn(username, password);
+        toast.success(`Welcome back, ${profile.name}!`);
+        onLogin(profile);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+      console.error('[Login] Error:', errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const handleQuickLogin = (user) => {
-    setUsername(user.username);
-    setPassword(user.password);
-    setError('');
   };
 
   return (
@@ -57,61 +60,155 @@ export function Login({ onLogin, pharmacyName }) {
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4 shadow-lg shadow-blue-200">
             <Building2 className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">{pharmacyName || 'PharmaCare'}</h1>
           <p className="text-muted-foreground">Inventory Management System</p>
         </div>
 
-        {/* Login Card */}
-        <div className="bg-card rounded-lg border p-8">
-          <h2 className="text-2xl font-semibold text-card-foreground mb-6 text-center">Sign In</h2>
+        {/* Auth Card */}
+        <div className="bg-card rounded-xl border shadow-sm p-8 transition-all duration-300">
+          <h2 className="text-2xl font-bold text-card-foreground mb-2 text-center">
+            {isSignUp ? 'Create Account' : 'Sign In'}
+          </h2>
+          <p className="text-sm text-muted-foreground text-center mb-8">
+            {isSignUp ? 'Set up your pharmacy inventory' : 'Access your pharmacy dashboard'}
+          </p>
           
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-                {error}
-              </div>
-            )}
-
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-muted-foreground mb-1">
-                Username
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Username</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
+                <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="text"
-                  id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
-                  placeholder="Enter username"
+                  className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                  placeholder={isSignUp ? "Choose a username" : "Enter your username"}
                   required
                 />
               </div>
             </div>
 
+            {isSignUp && (
+              <>
+                {role === 'staff' && (
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg mb-4 flex items-start gap-2 animate-in slide-in-from-top-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="text-xs text-amber-800">
+                      <strong>Staff Registration:</strong> A valid Pharmacy ID from your manager is required to join an existing pharmacy.
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Full Name</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                      placeholder="Enter your full name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {role === 'manager' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy Name</label>
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        value={pharmacyNameInput}
+                        onChange={(e) => setPharmacyNameInput(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                        placeholder="e.g., PharmaCare Pharmacy"
+                        required={role === 'manager'}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                      placeholder="Enter your email"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Account Type</label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setRole('manager')}
+                      className={`py-2 text-sm font-medium rounded-md transition-all ${
+                        role === 'manager' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Manager
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole('staff')}
+                      className={`py-2 text-sm font-medium rounded-md transition-all ${
+                        role === 'staff' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Staff
+                    </button>
+                  </div>
+                </div>
+
+                {role === 'staff' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy ID</label>
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <input
+                        type="text"
+                        value={pharmacyIdInput}
+                        onChange={(e) => setPharmacyIdInput(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                        placeholder="Paste Pharmacy ID from manager"
+                        required={role === 'staff'}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-muted-foreground mb-1">
-                Password
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-5 h-5" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  id="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-input-background"
-                  placeholder="Enter password"
+                  className="w-full pl-10 pr-10 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                  placeholder="Enter your password"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -120,66 +217,33 @@ export function Login({ onLogin, pharmacyName }) {
 
             <button
               type="submit"
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-all font-bold shadow-md shadow-blue-100 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sign In
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                isSignUp ? <UserPlus className="w-5 h-5" /> : <LogIn className="w-5 h-5" />
+              )}
+              {isSignUp ? (role === 'staff' ? 'Create Staff Account' : 'Create Manager Account') : 'Sign In to Dashboard'}
             </button>
           </form>
 
-          {/* Demo Credentials Toggle */}
-          <div className="mt-6">
+          <div className="mt-8 pt-6 border-t text-center">
             <button
-              onClick={() => setShowCredentials(!showCredentials)}
-              className="w-full text-sm text-blue-600 hover:text-blue-700 font-medium"
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
             >
-              {showCredentials ? 'Hide' : 'Show'} Demo Credentials
+              {isSignUp ? 'Already have an account? Sign In' : 'Need a new inventory? Create Manager Account'}
             </button>
           </div>
         </div>
 
-        {/* Demo Credentials */}
-        {showCredentials && (
-          <div className="mt-4 bg-card rounded-lg border p-6">
-            <h3 className="text-sm font-semibold text-card-foreground mb-4">Demo Accounts (Click to fill credentials):</h3>
-            <div className="space-y-3">
-              {users.map((user) => (
-                <button
-                  key={user.username}
-                  onClick={() => handleQuickLogin(user)}
-                  className="w-full text-left p-4 border rounded-md hover:border-blue-500 hover:bg-muted transition-all group"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-card-foreground group-hover:text-blue-600">{user.name}</p>
-                        <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700 capitalize">
-                          {user.role}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-2">{user.title}</p>
-                      <div className="text-xs text-muted-foreground">
-                        <p><strong>Username:</strong> {user.username}</p>
-                        <p><strong>Password:</strong> {user.password}</p>
-                      </div>
-                      <div className="mt-2 pt-2 border-t">
-                        <p className="text-xs font-medium text-muted-foreground mb-1">Permissions:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {user.permissions.map((perm, idx) => (
-                            <span key={idx} className="text-xs bg-muted text-foreground px-2 py-1 rounded">
-                              {perm}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-4 text-center">
-              Click any account to auto-fill credentials, then click Sign In
-            </p>
-          </div>
+        {/* Footer info for staff */}
+        {!isSignUp && (
+          <p className="mt-6 text-center text-xs text-muted-foreground px-8">
+            Staff members should request their login credentials or Pharmacy ID from their manager.
+          </p>
         )}
       </div>
     </div>

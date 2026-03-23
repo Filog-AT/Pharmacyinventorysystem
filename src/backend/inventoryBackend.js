@@ -52,17 +52,19 @@ export const getGroupedMedicines = (filteredMedicines) => {
 
 export const getCategoryStats = (safeMedicines, safeCategories) => {
   const stats = new Map();
+  // Initialize with safeCategories which are now {id, name} objects
   safeCategories.forEach(cat => {
-    stats.set(cat, { count: 0, totalValue: 0, lowStock: 0, itemCount: 0, expired: 0 });
+    const name = typeof cat === 'string' ? cat : cat.name;
+    stats.set(name, { count: 0, totalValue: 0, lowStock: 0, itemCount: 0, expired: 0, id: cat.id || name });
   });
   
   safeMedicines.forEach(m => {
     const catName = m.category || 'Uncategorized';
     if (!stats.has(catName)) {
-      stats.set(catName, { count: 0, totalValue: 0, lowStock: 0, itemCount: 0, expired: 0 });
+      stats.set(catName, { count: 0, totalValue: 0, lowStock: 0, itemCount: 0, expired: 0, id: m.categoryId || catName });
     }
     const s = stats.get(catName);
-    const totalQty = m.totalQuantity || 0;
+    const totalQty = Number(m.totalQuantity || 0);
     s.count += totalQty;
     s.totalValue += totalQty * Number(m.price || 0);
     s.itemCount += 1;
@@ -70,7 +72,8 @@ export const getCategoryStats = (safeMedicines, safeCategories) => {
     if (totalQty <= effectiveMin) {
       s.lowStock += 1;
     }
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = new Date(); 
+    today.setHours(0,0,0,0);
     const expiredBatches = (m.batches || []).filter(b => {
       const d = b.expiryDate ? new Date(b.expiryDate) : null;
       if (!d || isNaN(d.getTime())) return false;

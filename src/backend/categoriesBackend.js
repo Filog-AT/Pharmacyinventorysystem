@@ -4,20 +4,19 @@
  */
 
 export const getCategoryStats = (safeMedicines, safeCategories) => {
-  // Start with explicitly defined categories
   const stats = new Map();
   
-  // Initialize stats for all defined categories
+  // Initialize with safeCategories which are now {id, name} objects
   safeCategories.forEach(cat => {
-    stats.set(cat, { count: 0, totalValue: 0, lowStock: 0, items: [] });
+    const name = typeof cat === 'string' ? cat : cat.name;
+    stats.set(name, { count: 0, totalValue: 0, lowStock: 0, items: [], id: cat.id || name });
   });
   
   // Aggregate medicine data
   safeMedicines.forEach(med => {
     const category = med.category || 'Uncategorized';
-    // If we encounter a category not in our list, add it dynamically
     if (!stats.has(category)) {
-      stats.set(category, { count: 0, totalValue: 0, lowStock: 0, items: [] });
+      stats.set(category, { count: 0, totalValue: 0, lowStock: 0, items: [], id: med.categoryId || category });
     }
     
     const cat = stats.get(category);
@@ -26,7 +25,8 @@ export const getCategoryStats = (safeMedicines, safeCategories) => {
     cat.totalValue += qty * (med.price || 0);
     cat.items.push(med);
     
-    if (qty <= (med.minStockLevel || 0)) {
+    const minStock = Number(med.minStockLevel || 50);
+    if (qty <= minStock) {
       cat.lowStock += 1;
     }
   });

@@ -14,7 +14,7 @@ const actionColors = {
   LOGOUT: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Logout' },
 };
 
-export function AuditLog() {
+export function AuditLog({ currentUser }) {
   const [logs, setLogs] = useState([]);
   const [filteredLogs, setFilteredLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -29,17 +29,20 @@ export function AuditLog() {
   });
 
   useEffect(() => {
-    loadLogs();
-  }, []);
+    if (currentUser?.pharmacyId) {
+      loadLogs();
+    }
+  }, [currentUser?.pharmacyId]);
 
   useEffect(() => {
     filterLogs();
   }, [logs, filters]);
 
   const loadLogs = async () => {
+    if (!currentUser?.pharmacyId) return;
     setLoading(true);
     try {
-      const fetched = await auditService.getLogs({ limit: 200 });
+      const fetched = await auditService.getLogs(currentUser.pharmacyId, 200);
       const normalized = auditBackend.normalizeLogs(fetched);
       setLogs(normalized);
     } catch (error) {
@@ -50,10 +53,11 @@ export function AuditLog() {
   };
 
   const clearLogs = async () => {
+    if (!currentUser?.pharmacyId) return;
     if (!confirm('Clear all activity logs? This cannot be undone.')) return;
     setClearing(true);
     try {
-      await auditService.clearAllLogs();
+      await auditService.clearAllLogs(currentUser.pharmacyId);
       await loadLogs();
     } catch (error) {
       console.error('[AuditLog] Error clearing logs:', error);
