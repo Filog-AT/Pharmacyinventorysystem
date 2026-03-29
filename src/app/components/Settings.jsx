@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen, UserPlus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { User, Building2, Bell, Lock, Globe, Palette, Shield, BookOpen, UserPlus, Upload, Image as ImageIcon } from 'lucide-react';
 import { auditService } from '@/services/auditService';
 import { pharmacyService } from '@/services/pharmacyService';
 import { userService } from '@/services/userService';
@@ -7,10 +7,189 @@ import { medicineService } from '@/services/medicineService';
 import { receiptService } from '@/services/receiptService';
 import { categoryService } from '@/services/categoryService';
 import { toast } from 'sonner';
+import { storage } from '@/config/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings, currentUser, medicines = [], categories = [] }) {
   const [localPharmacyName, setLocalPharmacyName] = useState(settings?.pharmacyName || '');
+  const [logoUrl, setLogoUrl] = useState(settings?.logoUrl || '');
+  const [sidebarColor, setSidebarColor] = useState(settings?.sidebarColor || '');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Keep local state in sync with settings prop
+  useEffect(() => {
+    if (settings?.logoUrl) setLogoUrl(settings.logoUrl);
+    if (settings?.sidebarColor) setSidebarColor(settings.sidebarColor);
+  }, [settings?.logoUrl, settings?.sidebarColor]);
+
+  const extractThemeColors = (img) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 50;
+    canvas.height = 50;
+    ctx.drawImage(img, 0, 0, 50, 50);
+    const data = ctx.getImageData(0, 0, 50, 50).data;
+    
+    // For Average/Mixed Color (Content)
+    let avgR = 0, avgG = 0, avgB = 0, avgCount = 0;
+    
+    // For Dominant Color (Sidebar)
+    const colorCounts = {};
+    
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i+3] < 128) continue; // Skip transparent
+      
+      const r = data[i];
+      const g = data[i+1];
+      const b = data[i+2];
+      
+      // Add to Average
+      avgR += r;
+      avgG += g;
+      avgB += b;
+      avgCount++;
+      
+      // Add to Dominant (bucket colors to group similar shades)
+      const bucketSize = 16;
+      const bucketR = Math.floor(r / bucketSize) * bucketSize;
+      const bucketG = Math.floor(g / bucketSize) * bucketSize;
+      const bucketB = Math.floor(b / bucketSize) * bucketSize;
+      const key = `${bucketR},${bucketG},${bucketB}`;
+      colorCounts[key] = (colorCounts[key] || 0) + 1;
+    }
+    
+    if (avgCount === 0) return { dominant: '#3b82f6', mixed: '#f8fafc' };
+    
+    // Calculate Average
+    avgR = Math.floor(avgR / avgCount);
+    avgG = Math.floor(avgG / avgCount);
+    avgB = Math.floor(avgB / avgCount);
+    
+    // Find Dominant
+    let dominantKey = '';
+    let maxCount = 0;
+    Object.entries(colorCounts).forEach(([key, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        dominantKey = key;
+      }
+    });
+    const [domR, domG, domB] = dominantKey.split(',').map(Number);
+    
+    const toHex = (c) => c.toString(16).padStart(2, '0');
+    return {
+      dominant: `#${toHex(domR)}${toHex(domG)}${toHex(domB)}`,
+      mixed: `#${toHex(avgR)}${toHex(avgG)}${toHex(avgB)}`
+    };
+  };
+
+  const compressImage = async (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          // Downsize for sidebar logo (max 600px for better quality on larger displays)
+          const MAX_SIZE = 600;
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          const { dominant, mixed } = extractThemeColors(img);
+          canvas.toBlob((blob) => {
+            const previewUrl = URL.createObjectURL(blob);
+            resolve({ blob, dominant, mixed, previewUrl });
+          }, 'image/jpeg', 0.8);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !currentUser?.pharmacyId) return;
+
+    const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!supportedTypes.includes(file.type)) {
+      toast.error('Please upload a valid image (PNG, JPEG, JPG, or WEBP)');
+      return;
+    }
+
+    setUploadingLogo(true);
+    // Removed blocking toast for faster feel
+    
+    try {
+      const { blob, dominant, mixed, previewUrl } = await compressImage(file);
+      
+      // 1. Optimistic Update (Immediate UI feedback)
+      setLogoUrl(previewUrl);
+      setSidebarColor(dominant);
+      
+      const newSettings = { 
+        ...settings, 
+        logoUrl: previewUrl, 
+        sidebarColor: dominant,
+        contentColor: mixed 
+      };
+      
+      onUpdateSettings?.(newSettings);
+      
+      window.dispatchEvent(new CustomEvent('pharmacy-theme-updated', { 
+        detail: { logoUrl: previewUrl, sidebarColor: dominant, contentColor: mixed } 
+      }));
+
+      // 2. Background Upload
+      const storageRef = ref(storage, `pharmacies/${currentUser.pharmacyId}/logo`);
+      const uploadTask = uploadBytes(storageRef, blob);
+      
+      // 3. Update Firestore immediately without waiting for storage completion
+      // This makes it feel much faster
+      await pharmacyService.updatePharmacy(currentUser.pharmacyId, {
+        sidebarColor: dominant,
+        contentColor: mixed
+      });
+
+      const snapshot = await uploadTask;
+      const url = await getDownloadURL(snapshot.ref);
+
+      // 4. Final update with permanent URL
+      await pharmacyService.updatePharmacy(currentUser.pharmacyId, {
+        logoUrl: url,
+        sidebarColor: dominant,
+        contentColor: mixed
+      });
+
+      setLogoUrl(url);
+      onUpdateSettings?.({ ...newSettings, logoUrl: url });
+      toast.success('Logo and theme updated!');
+    } catch (err) {
+      console.error('[Settings] Logo upload error:', err);
+      toast.error('Failed to update logo.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
   
   const [passwords, setPasswords] = useState({
     current: '',
@@ -140,6 +319,51 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
             <Building2 className="w-6 h-6 text-blue-600" />
             <h2 className="text-xl font-semibold text-card-foreground">Pharmacy Information</h2>
           </div>
+          
+          {/* Logo Upload Section */}
+          <div className="mb-6 flex flex-col md:flex-row items-center gap-6 p-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+            <div className="relative group">
+              <div className="w-24 h-24 rounded-lg bg-white border-2 border-gray-200 flex items-center justify-center overflow-hidden shadow-sm group-hover:border-blue-400 transition-colors">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Pharmacy Logo" className="w-full h-full object-contain" />
+                ) : (
+                  <ImageIcon className="w-10 h-10 text-gray-300" />
+                )}
+                {uploadingLogo && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingLogo}
+                className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-1.5 rounded-full shadow-lg hover:bg-blue-700 transition-transform active:scale-95 disabled:bg-gray-400"
+                title="Upload Logo"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept="image/*" 
+                onChange={handleLogoUpload} 
+              />
+            </div>
+            <div className="flex-1 text-center md:text-left">
+              <h3 className="font-bold text-gray-900">Pharmacy Logo</h3>
+              <p className="text-sm text-gray-500 mb-2">Upload your pharmacy logo to customize your workspace. We'll automatically match the sidebar theme to your logo's colors.</p>
+              {sidebarColor && (
+                <div className="flex items-center gap-2 justify-center md:justify-start">
+                  <span className="text-xs font-medium text-gray-400 uppercase">Sidebar Theme:</span>
+                  <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: sidebarColor }}></div>
+                  <span className="text-xs font-mono text-gray-600">{sidebarColor}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-muted-foreground mb-1">Pharmacy Name</label>
@@ -511,6 +735,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       
                       toast.success('Successfully cleared all historical data.');
                       window.dispatchEvent(new Event('refresh-medicines'));
+                      window.dispatchEvent(new Event('refresh-receipts'));
                     } catch (e) {
                       console.error(e);
                       toast.error('Failed to clear some records. Try again.');
@@ -546,13 +771,16 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       return opts[Math.floor(Math.random() * opts.length)];
                     };
                     const unitMultiplier = (m, unit) => {
-                      if (!m.batches || m.batches.length === 0) return 1;
-                      const b = m.batches[0];
-                      const bl = Number(b.blistersPerBox || 1);
-                      const upb = Number(b.unitsPerBlister || 1);
-                      if (unit === 'blister') return upb;
-                      if (unit === 'box') return bl * upb;
-                      return 1;
+                      const today = new Date();
+                      const validBatch = Array.isArray(m.batches) ? 
+                        (m.batches.find(b => new Date(b.expiryDate) >= today && b.quantity > 0) || m.batches[0]) : null;
+
+                      let blistersPerBox = Number(validBatch?.blistersPerBox || m.defaultBlistersPerBox || 1);
+                      let unitsPerBlister = Number(validBatch?.unitsPerBlister || m.defaultUnitsPerBlister || 1);
+
+                      if (unit === 'blister') return unitsPerBlister;
+                      if (unit === 'box') return blistersPerBox * unitsPerBlister;
+                      return 1; // 'piece'
                     };
                     const vatRate = 0.12;
                     let created = 0;
@@ -610,6 +838,13 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                         hour,
                         Math.floor(Math.random() * 60)
                       );
+                      
+                      // 10% chance to make it "Today" for immediate feedback in dashboard
+                      if (Math.random() < 0.1) {
+                        ts = new Date(now);
+                        ts.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
+                      }
+
                       if (ts > now) {
                         const backDays = Math.floor(Math.random() * 7) + 1;
                         ts = new Date(now.getTime() - backDays * 86400000);
@@ -653,6 +888,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                     }
                     toast.success(`Generated ${created} demo sales across ${demoMonths} months. Refreshing dashboard...`);
                     window.dispatchEvent(new Event('refresh-medicines'));
+                    window.dispatchEvent(new Event('refresh-receipts'));
                     try {
                       await auditService.logAction(currentUser.pharmacyId, {
                         userId: currentUser?.uid || 'unknown',
@@ -702,10 +938,11 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                   setGenerating(true);
                   try {
                     const catalog = [
-                      // Antibiotics
+                      // Antibiotics (Mostly Prescription)
                       { 
                         name: 'Amoxicillin', 
                         category: 'Antibiotic',
+                        tag: 'Prescription',
                         variations: [
                           { dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' },
                           { dosageForm: 'capsule', strength: '250 mg', unit: 'capsules' },
@@ -715,17 +952,19 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       { 
                         name: 'Ciprofloxacin', 
                         category: 'Antibiotic',
+                        tag: 'Prescription',
                         variations: [
                           { dosageForm: 'tablet', strength: '500 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '250 mg', unit: 'tablets' }
                         ]
                       },
-                      { name: 'Azithromycin', category: 'Antibiotic', variations: [{ dosageForm: 'tablet', strength: '250 mg', unit: 'tablets' }] },
+                      { name: 'Azithromycin', category: 'Antibiotic', tag: 'Prescription', variations: [{ dosageForm: 'tablet', strength: '250 mg', unit: 'tablets' }] },
                       
-                      // Painkiller
+                      // Painkiller (Mixed)
                       { 
                         name: 'Paracetamol', 
                         category: 'Painkiller',
+                        tag: 'Non-Prescription',
                         variations: [
                           { dosageForm: 'tablet', strength: '500 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '325 mg', unit: 'tablets' },
@@ -735,6 +974,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       { 
                         name: 'Mefenamic Acid', 
                         category: 'Painkiller',
+                        tag: 'Prescription',
                         variations: [
                           { dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' },
                           { dosageForm: 'tablet', strength: '250 mg', unit: 'tablets' }
@@ -743,18 +983,20 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       { 
                         name: 'Ibuprofen', 
                         category: 'Painkiller',
+                        tag: 'Non-Prescription',
                         variations: [
                           { dosageForm: 'tablet', strength: '400 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '200 mg', unit: 'tablets' }
                         ]
                       },
-                      { name: 'Celecoxib', category: 'Painkiller', variations: [{ dosageForm: 'capsule', strength: '200 mg', unit: 'capsules' }] },
+                      { name: 'Celecoxib', category: 'Painkiller', tag: 'Prescription', variations: [{ dosageForm: 'capsule', strength: '200 mg', unit: 'capsules' }] },
                       
                       // Respiratory
-                      { name: 'Ascof (Cough Syrup)', category: 'Respiratory', variations: [{ dosageForm: 'syrup', strength: '600 mg/5 ml', unit: 'bottle' }] },
+                      { name: 'Ascof (Cough Syrup)', category: 'Respiratory', tag: 'Non-Prescription', variations: [{ dosageForm: 'syrup', strength: '600 mg/5 ml', unit: 'bottle' }] },
                       { 
                         name: 'Neozep', 
                         category: 'Respiratory',
+                        tag: 'Non-Prescription',
                         variations: [
                           { dosageForm: 'tablet', strength: 'Forte', unit: 'tablets' },
                           { dosageForm: 'syrup', strength: 'Drops', unit: 'bottle' }
@@ -762,37 +1004,40 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                       },
                       
                       // Gastrointestinal
-                      { name: 'Loperamide', category: 'Gastrointestinal', variations: [{ dosageForm: 'capsule', strength: '2 mg', unit: 'capsules' }] },
+                      { name: 'Loperamide', category: 'Gastrointestinal', tag: 'Non-Prescription', variations: [{ dosageForm: 'capsule', strength: '2 mg', unit: 'capsules' }] },
                       { 
                         name: 'Omeprazole', 
                         category: 'Gastrointestinal',
+                        tag: 'Prescription',
                         variations: [
                           { dosageForm: 'capsule', strength: '20 mg', unit: 'capsules' },
                           { dosageForm: 'capsule', strength: '40 mg', unit: 'capsules' }
                         ]
                       },
-                      { name: 'Kremil-S', category: 'Gastrointestinal', variations: [{ dosageForm: 'tablet', strength: 'Regular', unit: 'tablets' }] },
+                      { name: 'Kremil-S', category: 'Gastrointestinal', tag: 'Non-Prescription', variations: [{ dosageForm: 'tablet', strength: 'Regular', unit: 'tablets' }] },
                       
-                      // Cardiovascular
+                      // Cardiovascular (Prescription)
                       { 
                         name: 'Losartan', 
                         category: 'Cardiovascular',
+                        tag: 'Prescription',
                         variations: [
                           { dosageForm: 'tablet', strength: '50 mg', unit: 'tablets' },
                           { dosageForm: 'tablet', strength: '100 mg', unit: 'tablets' }
                         ]
                       },
-                      { name: 'Amlodipine', category: 'Cardiovascular', variations: [{ dosageForm: 'tablet', strength: '5 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }] },
+                      { name: 'Amlodipine', category: 'Cardiovascular', tag: 'Prescription', variations: [{ dosageForm: 'tablet', strength: '5 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }] },
                       
                       // Antihistamine
-                      { name: 'Cetirizine', category: 'Antihistamine', variations: [{ dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }, { dosageForm: 'syrup', strength: '5 mg/5 ml', unit: 'bottle' }] },
+                      { name: 'Cetirizine', category: 'Antihistamine', tag: 'Non-Prescription', variations: [{ dosageForm: 'tablet', strength: '10 mg', unit: 'tablets' }, { dosageForm: 'syrup', strength: '5 mg/5 ml', unit: 'bottle' }] },
                       
                       // Vitamins & Supplements
-                      { name: 'Vitamin C', category: 'Vitamins & Supplements', variations: [{ dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' }, { dosageForm: 'tablet', strength: '1000 mg', unit: 'tablets' }] },
-                      { name: 'Vitamin B-Complex', category: 'Vitamins & Supplements', variations: [{ dosageForm: 'tablet', strength: '100 mg', unit: 'tablets' }] },
+                      { name: 'Vitamin C', category: 'Vitamins & Supplements', tag: 'Vitamins', variations: [{ dosageForm: 'capsule', strength: '500 mg', unit: 'capsules' }, { dosageForm: 'tablet', strength: '1000 mg', unit: 'tablets' }] },
+                      { name: 'Vitamin B-Complex', category: 'Vitamins & Supplements', tag: 'Vitamins', variations: [{ dosageForm: 'tablet', strength: '100 mg', unit: 'tablets' }] },
+                      { name: 'Multivitamins', category: 'Vitamins & Supplements', tag: 'Vitamins', variations: [{ dosageForm: 'capsule', strength: 'Standard', unit: 'capsules' }] },
                       
-                      // Diabetes
-                      { name: 'Metformin', category: 'Diabetes', variations: [{ dosageForm: 'tablet', strength: '500 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '850 mg', unit: 'tablets' }] }
+                      // Diabetes (Prescription)
+                      { name: 'Metformin', category: 'Diabetes', tag: 'Prescription', variations: [{ dosageForm: 'tablet', strength: '500 mg', unit: 'tablets' }, { dosageForm: 'tablet', strength: '850 mg', unit: 'tablets' }] }
                     ];
 
                     const parsedCount = parseInt(demoMedicineCount || '0', 10);
@@ -837,6 +1082,18 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                         }
 
                         const categoryObj = categories.find(c => c.name === item.category) || categories[0];
+                        if (!categoryObj || !categoryObj.id) {
+                          // Try to create the category if it doesn't exist
+                          try {
+                            const { categoryService } = await import('@/services/categoryService');
+                            const newCatId = await categoryService.addCategory(currentUser.pharmacyId, item.category);
+                            categoryObj = { id: newCatId, name: item.category };
+                            window.dispatchEvent(new Event('refresh-categories'));
+                          } catch (catErr) {
+                            console.warn('Failed to auto-create category:', item.category);
+                            categoryObj = categories[0];
+                          }
+                        }
                         if (!categoryObj || !categoryObj.id) throw new Error('Valid category not found');
 
                         const medId = await medicineService.addMedicine(
@@ -848,6 +1105,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                             strength: item.strength,
                             unit: item.unit,
                             category: item.category,
+                            tag: group.tag || 'Non-Prescription',
                             price,
                             minStockLevel,
                             batches: [],
@@ -867,6 +1125,16 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                         for (let i = 0; i < batchesToAdd; i++) {
                           let boxes = 0, blisters = 1, units = 1;
                           
+                          // Assign realistic multipliers based on dosage form
+                          const form = String(item.dosageForm).toLowerCase();
+                          if (form.includes('tablet') || form.includes('capsule')) {
+                            blisters = Math.random() < 0.5 ? 10 : 20; // 10 or 20 blisters per box
+                            units = Math.random() < 0.5 ? 10 : 8;    // 10 or 8 units per blister
+                          } else if (form.includes('syrup') || form.includes('suspension') || form.includes('bottle')) {
+                            blisters = 1;
+                            units = 1;
+                          }
+
                           if (status === 'low') {
                             // Low stock: total quantity <= minStockLevel (50)
                             boxes = Math.floor(Math.random() * 40) + 5; 

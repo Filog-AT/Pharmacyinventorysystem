@@ -49,7 +49,7 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
     const load = async () => {
       try {
         if (!medicine?.id || !currentUser?.pharmacyId) return;
-        const records = await medicineService.getSalesLastNDays(currentUser.pharmacyId, medicine.id, 30);
+        const records = await medicineService.getSalesLastNDays(currentUser.pharmacyId, medicine.id, 30, medicine.name);
         if (!mounted) return;
         const series = buildLast30DaysSeries(records);
         setSalesSeries(series);

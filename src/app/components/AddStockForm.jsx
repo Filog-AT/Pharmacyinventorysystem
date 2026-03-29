@@ -11,7 +11,25 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
     boxesReceived: 0,
     blistersPerBox: 1,
     unitsPerBlister: 1,
+    dateReceived: new Date().toISOString().split('T')[0],
   });
+
+  const [totalUnits, setTotalUnits] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedMedicine = medicines.find(m => m.id === formData.medicineId);
+  const isBottle = addStockBackend.isBottle(selectedMedicine);
+
+  useEffect(() => {
+    if (selectedMedicine) {
+      setFormData(prev => ({
+        ...prev,
+        blistersPerBox: selectedMedicine.defaultBlistersPerBox || 1,
+        unitsPerBlister: selectedMedicine.defaultUnitsPerBlister || 1,
+        supplier: selectedMedicine.supplier || prev.supplier
+      }));
+    }
+  }, [selectedMedicine?.id]);
 
   useEffect(() => {
     // Prevent background scrolling when form is open
@@ -20,9 +38,6 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
       document.body.style.overflow = 'unset';
     };
   }, []);
-
-  const [totalUnits, setTotalUnits] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const total = addStockBackend.calculateTotalUnits(formData.boxesReceived, formData.blistersPerBox, formData.unitsPerBlister);
@@ -55,6 +70,7 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
       await onSubmit(formData.medicineId, {
         batchNumber: (formData.batchNumber || '').trim(),
         expiryDate: formData.expiryDate,
+        dateReceived: formData.dateReceived,
         supplier: (formData.supplier || '').trim(),
         boxesReceived: boxes,
         blistersPerBox: blisters,
@@ -65,9 +81,6 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
       setSubmitting(false);
     }
   };
-
-  const selectedMedicine = medicines.find(m => m.id === formData.medicineId);
-  const isBottle = addStockBackend.isBottle(selectedMedicine);
 
   useEffect(() => {
     if (isBottle) {
@@ -162,28 +175,44 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
               />
             </div>
 
-            <div className="col-span-2">
-              <label htmlFor="supplier" className="block text-sm font-medium mb-1">
-                Supplier *
-              </label>
-              <input
-                type="text"
-                id="supplier"
-                name="supplier"
-                value={formData.supplier}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter supplier name"
-              />
+            <div className="col-span-2 grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="dateReceived" className="block text-sm font-medium mb-1">
+                  Date Received *
+                </label>
+                <input
+                  type="date"
+                  id="dateReceived"
+                  name="dateReceived"
+                  value={formData.dateReceived}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="supplier" className="block text-sm font-medium mb-1">
+                  Supplier *
+                </label>
+                <input
+                  type="text"
+                  id="supplier"
+                  name="supplier"
+                  value={formData.supplier}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter supplier name"
+                />
+              </div>
             </div>
 
             <div className="border-t col-span-2 pt-4 mt-2">
               <h3 className="text-sm font-semibold mb-3 text-gray-700">Stock Details</h3>
               <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor="boxesReceived" className="block text-xs font-medium mb-1">
-                    {isBottle ? 'Bottles Received' : 'Boxes Received'}
+                <div className="col-span-3">
+                  <label htmlFor="boxesReceived" className="block text-sm font-medium mb-1">
+                    {isBottle ? 'Bottles Received *' : 'Boxes Received *'}
                   </label>
                   <input
                     type="number"
@@ -191,43 +220,21 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
                     name="boxesReceived"
                     value={formData.boxesReceived}
                     onChange={handleChange}
-                    min="0"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min="1"
+                    required
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-lg"
+                    placeholder="Enter quantity"
                   />
                 </div>
-                {!isBottle && (
-                  <>
-                    <div>
-                      <label htmlFor="blistersPerBox" className="block text-xs font-medium mb-1">
-                        Blisters per Box
-                      </label>
-                      <input
-                        type="number"
-                        id="blistersPerBox"
-                        name="blistersPerBox"
-                        value={formData.blistersPerBox}
-                        onChange={handleChange}
-                        min="1"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="unitsPerBlister" className="block text-xs font-medium mb-1">
-                        Units per Blister
-                      </label>
-                      <input
-                        type="number"
-                        id="unitsPerBlister"
-                        name="unitsPerBlister"
-                        value={formData.unitsPerBlister}
-                        onChange={handleChange}
-                        min="1"
-                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </>
-                )}
+                {/* Hidden manual inputs for blisters/units as they are now pulled from variation defaults */}
+                <input type="hidden" name="blistersPerBox" value={formData.blistersPerBox} />
+                <input type="hidden" name="unitsPerBlister" value={formData.unitsPerBlister} />
               </div>
+              {!isBottle && (
+                <p className="text-[10px] text-gray-500 mt-2 italic">
+                  * Using saved variation defaults: {formData.blistersPerBox} blisters/box, {formData.unitsPerBlister} units/blister
+                </p>
+              )}
             </div>
 
             <div className="col-span-2 bg-blue-50 p-3 rounded-md flex justify-between items-center">

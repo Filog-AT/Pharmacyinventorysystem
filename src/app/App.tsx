@@ -149,10 +149,8 @@ function App() {
   };
 
   const handleLogout = () => {
-    if (confirm('Are you sure you want to sign out?')) {
-      setCurrentUser(null);
-      setActivePage('dashboard');
-    }
+    setCurrentUser(null);
+    setActivePage('dashboard');
   };
 
   const handleAddCategory = async (newCategory: string) => {

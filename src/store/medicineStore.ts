@@ -17,15 +17,20 @@ export interface Batch {
 export interface Medicine {
   id: string;
   name: string;
+  brandName: string; // Brand name (e.g., Panadol)
   category: string;
   dosageForm: string; // tablet, capsule, etc.
   strength: string; // e.g., 500mg
+  tag?: 'Prescription' | 'Non-Prescription'; // New field for categorization
   unit: string; // The base unit (e.g., tablets)
   minStockLevel: number;
   price: number; // Selling price per base unit
   batches: Batch[];
   totalQuantity: number; // Sum of all NON-EXPIRED batch quantities
   createdAt: string;
+  // Default values for variations/batches
+  defaultBlistersPerBox?: number;
+  defaultUnitsPerBlister?: number;
 }
 
 interface MedicineStore {

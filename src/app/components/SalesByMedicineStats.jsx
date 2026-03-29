@@ -7,8 +7,10 @@ export function SalesByMedicineStats({ receipts = [], medicines = [], onlyDaily 
   const stockMap = useMemo(() => {
     const map = new Map();
     (medicines || []).forEach(m => {
-      if (m.id) map.set(m.id, m.totalQuantity || 0);
-      if (m.name) map.set(m.name, m.totalQuantity || 0);
+      const id = String(m.id || '').trim();
+      const name = String(m.name || '').trim().toLowerCase();
+      if (id) map.set(id, m.totalQuantity || 0);
+      if (name) map.set(name, m.totalQuantity || 0);
     });
     return map;
   }, [medicines]);
@@ -24,11 +26,19 @@ export function SalesByMedicineStats({ receipts = [], medicines = [], onlyDaily 
       const dayKey = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')}`;
       if (!Array.isArray(r.items)) return;
       r.items.forEach(it => {
-        const id = it.medicineId || it.name;
-        if (!id) return;
-        const map = dayMap.get(id) || new Map();
-        map.set(dayKey, (map.get(dayKey) || 0) + Number(it.quantity || 0));
-        dayMap.set(id, map);
+        const id = String(it.medicineId || '').trim();
+        const name = String(it.name || '').trim().toLowerCase();
+        
+        if (id) {
+          const m = dayMap.get(id) || new Map();
+          m.set(dayKey, (m.get(dayKey) || 0) + Number(it.quantity || 0));
+          dayMap.set(id, m);
+        }
+        if (name) {
+          const m = dayMap.get(name) || new Map();
+          m.set(dayKey, (m.get(dayKey) || 0) + Number(it.quantity || 0));
+          dayMap.set(name, m);
+        }
       });
     });
     const avgMap = new Map();
@@ -42,30 +52,35 @@ export function SalesByMedicineStats({ receipts = [], medicines = [], onlyDaily 
 
   const aggregatedData = useMemo(() => {
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    const currentDate = now.toDateString();
+    const todayStr = now.toDateString();
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const yearStr = `${now.getFullYear()}`;
 
     const salesMap = new Map();
 
+    console.log(`[SalesByMedicineStats] Aggregating ${receipts?.length || 0} receipts for period: ${timeFilter}`);
+
     receipts.forEach(receipt => {
-      const timestamp = receipt?.timestamp && typeof receipt.timestamp.toDate === 'function' 
+      const ts = receipt?.timestamp && typeof receipt.timestamp.toDate === 'function' 
         ? receipt.timestamp.toDate() 
         : new Date(receipt.timestamp);
       
-      let include = false;
+      if (isNaN(ts.getTime())) return;
 
+      let include = false;
       if (timeFilter === 'day') {
-        if (timestamp.toDateString() === currentDate) include = true;
+        if (ts.toDateString() === todayStr) include = true;
       } else if (timeFilter === 'month') {
-        if (timestamp.getFullYear() === currentYear && timestamp.getMonth() === currentMonth) include = true;
+        const tsMonth = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
+        if (tsMonth === monthStr) include = true;
       } else if (timeFilter === 'year') {
-        if (timestamp.getFullYear() === currentYear) include = true;
+        const tsYear = `${ts.getFullYear()}`;
+        if (tsYear === yearStr) include = true;
       }
 
       if (include && Array.isArray(receipt.items)) {
         receipt.items.forEach(item => {
-          const key = item.medicineId || item.name; // Fallback to name if id missing
+          const key = String(item.medicineId || item.name || '').trim();
           if (!key) return;
 
           const existing = salesMap.get(key) || { 
@@ -76,55 +91,72 @@ export function SalesByMedicineStats({ receipts = [], medicines = [], onlyDaily 
             lastSoldAt: null
           };
 
-          // Normalize quantity based on unit if needed, but for now just sum raw quantity
-          // Or better, just display the raw count and maybe the unit if consistent
-          // If a medicine is sold in different units (piece vs box), this might be tricky.
-          // For simple stats, let's sum the "quantity" field from the receipt item.
-          // Note: The receipt item quantity is "number of units sold" (e.g. 2 boxes).
-          // Ideally we should track base units, but the prompt asks "how many specific medicines".
-          
           salesMap.set(key, {
-            key, // Store key for lookup
+            key,
             name: item.name,
             quantity: existing.quantity + (Number(item.quantity) || 0),
-            revenue: existing.revenue + ((Number(item.price) || 0) * (Number(item.quantity) || 0)),
-            unit: existing.unit, // This might vary, but keep simple for now
-            lastSoldAt: existing.lastSoldAt && existing.lastSoldAt > timestamp ? existing.lastSoldAt : timestamp
+            revenue: existing.revenue + (Number(item.subtotal || (Number(item.price || 0) * Number(item.quantity || 0)))),
+            unit: existing.unit,
+            lastSoldAt: existing.lastSoldAt && existing.lastSoldAt > ts ? existing.lastSoldAt : ts
           });
         });
       }
     });
 
-    return Array.from(salesMap.values())
+    const result = Array.from(salesMap.values())
       .sort((a, b) => b.quantity - a.quantity);
+    
+    console.log(`[SalesByMedicineStats] Found ${result.length} unique items sold in this period`);
+    return result;
   }, [receipts, timeFilter]);
 
   const previousAggregates = useMemo(() => {
     const now = new Date();
     const prevSalesMap = new Map();
+    
+    // Calculate previous period
+    let isPrevDay = false;
+    let prevTodayStr = '';
+    let prevMonthStr = '';
+    let prevYearStr = '';
+
+    if (timeFilter === 'day') {
+      const d = new Date(now); d.setDate(d.getDate() - 1);
+      prevTodayStr = d.toDateString();
+      isPrevDay = true;
+    } else if (timeFilter === 'month') {
+      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      prevMonthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    } else if (timeFilter === 'year') {
+      prevYearStr = `${now.getFullYear() - 1}`;
+    }
+
     receipts.forEach(receipt => {
-      const timestamp = receipt?.timestamp && typeof receipt.timestamp.toDate === 'function' 
+      const ts = receipt?.timestamp && typeof receipt.timestamp.toDate === 'function' 
         ? receipt.timestamp.toDate() 
         : new Date(receipt.timestamp);
+      
+      if (isNaN(ts.getTime())) return;
+
       let includePrev = false;
       if (timeFilter === 'day') {
-        const prevDay = new Date(now);
-        prevDay.setDate(now.getDate() - 1);
-        includePrev = timestamp.toDateString() === prevDay.toDateString();
+        if (ts.toDateString() === prevTodayStr) includePrev = true;
       } else if (timeFilter === 'month') {
-        const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        includePrev = timestamp.getFullYear() === prevMonth.getFullYear() && timestamp.getMonth() === prevMonth.getMonth();
+        const tsMonth = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
+        if (tsMonth === prevMonthStr) includePrev = true;
       } else if (timeFilter === 'year') {
-        includePrev = timestamp.getFullYear() === (now.getFullYear() - 1);
+        const tsYear = `${ts.getFullYear()}`;
+        if (tsYear === prevYearStr) includePrev = true;
       }
+
       if (includePrev && Array.isArray(receipt.items)) {
         receipt.items.forEach(item => {
-          const key = item.medicineId || item.name;
+          const key = String(item.medicineId || item.name || '').trim();
           if (!key) return;
           const existing = prevSalesMap.get(key) || { quantity: 0, revenue: 0 };
           prevSalesMap.set(key, {
             quantity: existing.quantity + (Number(item.quantity) || 0),
-            revenue: existing.revenue + ((Number(item.price) || 0) * (Number(item.quantity) || 0)),
+            revenue: existing.revenue + (Number(item.subtotal || (Number(item.price || 0) * Number(item.quantity || 0)))),
           });
         });
       }

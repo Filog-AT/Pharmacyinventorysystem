@@ -5,14 +5,23 @@
 
 export const calculateTodayStats = (receipts) => {
   const now = new Date();
+  const todayStr = now.toDateString();
   let todaySales = 0;
   let todayUnitsSold = 0;
   let todayTransactions = 0;
 
+  console.log(`[StaffDashboardBackend] Calculating stats for ${receipts?.length || 0} receipts. Today is: ${todayStr}`);
+
   (receipts || []).forEach(r => {
     const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-    if (ts.toDateString() === now.toDateString()) {
-      todaySales += (r.grandTotal || r.subtotal || 0);
+    if (isNaN(ts.getTime())) {
+      console.warn(`[StaffDashboardBackend] Invalid timestamp for receipt:`, r);
+      return;
+    }
+
+    if (ts.toDateString() === todayStr) {
+      const amount = Number(r.grandTotal || r.total || r.subtotal || 0);
+      todaySales += amount;
       todayTransactions += 1;
       if (Array.isArray(r.items)) {
         todayUnitsSold += r.items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
@@ -20,7 +29,35 @@ export const calculateTodayStats = (receipts) => {
     }
   });
 
+  console.log(`[StaffDashboardBackend] Results: Sales=${todaySales}, Units=${todayUnitsSold}, Tx=${todayTransactions}`);
   return { todaySales, todayUnitsSold, todayTransactions };
+};
+
+export const getTodayHourlySales = (receipts) => {
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const hours = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    label: `${i}:00`,
+    sales: 0,
+    transactions: 0
+  }));
+
+  (receipts || []).forEach(r => {
+    const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
+    if (isNaN(ts.getTime())) return;
+
+    if (ts.toDateString() === todayStr) {
+      const hour = ts.getHours();
+      const amount = Number(r.grandTotal || r.total || r.subtotal || 0);
+      hours[hour].sales += amount;
+      hours[hour].transactions += 1;
+    }
+  });
+
+  // Filter to show only hours with sales or from 8 AM to current hour
+  const currentHour = now.getHours();
+  return hours.filter(h => h.sales > 0 || (h.hour >= 8 && h.hour <= Math.max(17, currentHour)));
 };
 
 export const getCategoryStockData = (medicines) => {

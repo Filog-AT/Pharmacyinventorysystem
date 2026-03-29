@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getAnalytics } from "firebase/analytics";
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBBZWPzpJ_z4BlNSnAJb2ER8cIszTDsdvU", 
@@ -20,6 +21,7 @@ let app;
 let auth;
 let db;
 let analytics;
+let storage;
 
 try {
   app = initializeApp(firebaseConfig);
@@ -33,6 +35,10 @@ try {
   auth = getAuth(app);
   console.log('[Firebase] Auth initialized successfully');
 
+  // Initialize Storage
+  storage = getStorage(app);
+  console.log('[Firebase] Storage initialized');
+
   // Initialize Analytics (only works in browser environments)
   if (typeof window !== 'undefined') {
     analytics = getAnalytics(app);
@@ -43,6 +49,6 @@ try {
   throw error;
 }
 
-export { auth, db, analytics };
+export { auth, db, analytics, storage };
 export default app;
 

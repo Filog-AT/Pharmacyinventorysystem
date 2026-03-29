@@ -9,6 +9,7 @@ import {
   where,
   QueryConstraint,
   limit as firestoreLimit,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { Medicine, Batch } from '@/store/medicineStore';
@@ -276,15 +277,13 @@ export const medicineService = {
   },
 
   // Get sales in the last N days (default 30) for a medicine (derived from receipts)
-  async getSalesLastNDays(pharmacyId: string, medicineId: string, days: number = 30): Promise<Array<{ quantity_sold: number; date_sold: Date }>> {
+  async getSalesLastNDays(pharmacyId: string, medicineId: string, days: number = 30, medicineName?: string): Promise<Array<{ quantity_sold: number; date_sold: Date }>> {
     if (!pharmacyId || !medicineId) return [];
     try {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - days);
       cutoff.setHours(0, 0, 0, 0);
 
-      // We fetch receipts for this pharmacy from the last 30+ days
-      // We use a slightly larger buffer (35 days) to be safe
       const queryCutoff = new Date(cutoff);
       queryCutoff.setDate(queryCutoff.getDate() - 5);
 
@@ -296,25 +295,28 @@ export const medicineService = {
       const qSnap = await getDocs(q);
       const records: Array<{ quantity_sold: number; date_sold: Date }> = [];
       
+      const targetId = String(medicineId).trim();
+      const targetName = medicineName ? String(medicineName).trim().toLowerCase() : '';
+
+      console.log(`[MedicineService] Searching sales for ${medicineName} (${medicineId}) in last ${days} days...`);
+      let foundCount = 0;
+
       qSnap.forEach((d) => {
         const data = d.data();
         if (!data) return;
 
         const dt = data.timestamp?.toDate ? data.timestamp.toDate() : new Date(data.timestamp);
-        if (isNaN(dt.getTime())) return;
-        if (dt < cutoff) return; // Skip if outside our requested range
+        if (isNaN(dt.getTime()) || dt < cutoff) return;
           
         if (Array.isArray(data.items)) {
           data.items.forEach((item: any) => {
-            // Robust matching: check medicineId (ID) or medicineName (as fallback)
-            const targetId = String(medicineId).trim();
             const itemMedId = String(item.medicineId || '').trim();
+            const itemMedName = String(item.name || '').trim().toLowerCase();
             
-            // Also check if the medicine name matches as a fallback
-            // (Useful for generated data or legacy records)
-            const isMatch = itemMedId === targetId;
+            const isMatch = itemMedId === targetId || (targetName && itemMedName === targetName);
             
             if (isMatch) {
+              foundCount++;
               records.push({
                 quantity_sold: Number(item.quantity || 0),
                 date_sold: dt,
@@ -323,6 +325,7 @@ export const medicineService = {
           });
         }
       });
+      console.log(`[MedicineService] Found ${foundCount} matching sales records for ${medicineName}`);
       return records;
     } catch (error) {
       console.error('[MedicineService] Error fetching medicine sales:', error);

@@ -12,9 +12,11 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
 
   const [formData, setFormData] = useState({
     name: '',
+    brandName: '',
     category: 'Antibiotic',
     dosageForm: 'tablet',
     strength: '',
+    tag: 'Non-Prescription', // Default tag
     strengthValue: '',
     strengthUnit: 'mg',
     unit: 'tablets',
@@ -22,6 +24,7 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
     supplier: '',
     quantity: 0,
     expiryDate: '',
+    dateReceived: new Date().toISOString().split('T')[0],
     blisterCount: 1,
     tabletCount: 1,
     subUnitType: 'tablets',
@@ -46,12 +49,14 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
   }, [formData.dosageForm, !!medicine]);
 
   useEffect(() => {
-    if (medicine) {
+    if (medicine && !formData.name) {
       setFormData({
         name: medicine.name,
+        brandName: medicine.brandName || '',
         category: medicine.category || 'Antibiotic',
         dosageForm: medicine.dosageForm || 'tablet',
         strength: medicine.strength || '',
+        tag: medicine.tag || 'Non-Prescription',
         strengthValue: (() => {
           const m = String(medicine.strength || '').trim().match(/(\d+(?:\.\d+)?)/);
           return m ? m[1] : '';
@@ -65,8 +70,9 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
         supplier: medicine.supplier || '',
         quantity: medicine.quantity || 0,
         expiryDate: medicine.expiryDate || '',
-        blisterCount: medicine.blisterCount || 1,
-        tabletCount: medicine.tabletCount || 1,
+        dateReceived: medicine.dateReceived || new Date().toISOString().split('T')[0],
+        blisterCount: medicine.blisterCount || medicine.defaultBlistersPerBox || 1,
+        tabletCount: medicine.tabletCount || medicine.defaultUnitsPerBlister || 1,
         subUnitType: medicine.subUnitType || medicine.unit || 'tablets',
         minStockLevel: Math.max(50, Number(medicine.minStockLevel || 0)),
       });
@@ -169,6 +175,12 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
       payload.category = newCat;
     }
 
+    // Set defaults if creating a variation/new medicine
+    if (!medicine || medicine.isVariation) {
+      payload.defaultBlistersPerBox = Number(payload.blisterCount || 1);
+      payload.defaultUnitsPerBlister = Number(payload.tabletCount || 1);
+    }
+
     try {
       await onSubmit(payload);
     } catch (err) {
@@ -255,23 +267,40 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label htmlFor="name" className="block text-sm font-medium mb-1">
-                Medicine Name *
-              </label>
-              <input
-                type="text"
-                id="name"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-medium"
-                placeholder="Enter medicine name"
-                disabled={!!medicine?.id || medicine?.isVariation}
-              />
+            <div className="col-span-2 grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="brandName" className="block text-sm font-medium mb-1">
+                  Brand Name
+                </label>
+                <input
+                  type="text"
+                  id="brandName"
+                  name="brandName"
+                  value={formData.brandName}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. Panadol"
+                  disabled={!!medicine?.id}
+                />
+              </div>
+              <div>
+                <label htmlFor="name" className="block text-sm font-medium mb-1">
+                  Generic Name *
+                </label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 font-medium"
+                  placeholder="e.g. Paracetamol"
+                  disabled={!!medicine?.id}
+                />
+              </div>
               {(!!medicine?.id || medicine?.isVariation) && (
-                <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider font-semibold">
+                <p className="col-span-2 text-[10px] text-muted-foreground mt-1 uppercase tracking-wider font-semibold">
                   {medicine?.isVariation ? 'Adding variation to this product' : 'Product name cannot be changed'}
                 </p>
               )}
@@ -289,8 +318,26 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
                 onChange={handleChange}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Supplier name"
-                disabled={!!medicine}
+                disabled={!!medicine?.id}
               />
+            </div>
+
+            <div>
+              <label htmlFor="tag" className="block text-sm font-medium mb-1">
+                Tag *
+              </label>
+              <select
+                id="tag"
+                name="tag"
+                value={formData.tag}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Non-Prescription">Non-Prescription</option>
+                <option value="Prescription">Prescription</option>
+                <option value="Vitamins">Vitamins</option>
+              </select>
             </div>
 
             <div>
@@ -483,20 +530,36 @@ export function MedicineForm({ medicine, categories, existingMedicines = [], onS
               </div>
 
               {(!medicine || medicine.isVariation) && (
-                <div>
-                  <label htmlFor="expiryDate" className="block text-sm font-medium mb-1">
-                    Expiry Date *
-                  </label>
-                  <input
-                    type="date"
-                    id="expiryDate"
-                    name="expiryDate"
-                    value={formData.expiryDate}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label htmlFor="expiryDate" className="block text-sm font-medium mb-1">
+                      Expiry Date *
+                    </label>
+                    <input
+                      type="date"
+                      id="expiryDate"
+                      name="expiryDate"
+                      value={formData.expiryDate}
+                      onChange={handleChange}
+                      required
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="dateReceived" className="block text-sm font-medium mb-1">
+                      Date Received *
+                    </label>
+                    <input
+                      type="date"
+                      id="dateReceived"
+                      name="dateReceived"
+                      value={formData.dateReceived}
+                      onChange={handleChange}
+                      required
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
               )}
             </div>
           </div>

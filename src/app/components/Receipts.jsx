@@ -164,6 +164,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
         const createdReceipt = { id: receiptId, ...payload };
         try { await medicineService.getMedicines(currentUser.pharmacyId); } catch {}
         try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
+        try { window.dispatchEvent(new Event('refresh-receipts')); } catch {}
         setSaleSuccess(createdReceipt);
         setCart([]);
         setCustomerName('');

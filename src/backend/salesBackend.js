@@ -4,23 +4,16 @@
  */
 
 export const getUnitMultiplier = (m, unit) => {
-  // Get multipliers from the first batch if available, otherwise default to 1
-  let blistersPerBox = 1;
-  let unitsPerBlister = 1;
+  const today = new Date();
+  const validBatch = Array.isArray(m.batches) ? 
+    (m.batches.find(b => new Date(b.expiryDate) >= today && b.quantity > 0) || m.batches[0]) : null;
 
-  if (Array.isArray(m.batches) && m.batches.length > 0) {
-    const b = m.batches[0];
-    blistersPerBox = Number(b?.blistersPerBox || 1);
-    unitsPerBlister = Number(b?.unitsPerBlister || 1);
-  }
+  let blistersPerBox = Number(validBatch?.blistersPerBox || m.defaultBlistersPerBox || 1);
+  let unitsPerBlister = Number(validBatch?.unitsPerBlister || m.defaultUnitsPerBlister || 1);
 
-  if (unit === 'blister') {
-    return unitsPerBlister;
-  }
-  if (unit === 'box') {
-    return blistersPerBox * unitsPerBlister;
-  }
-  return 1; // 'piece' or 'unit'
+  if (unit === 'blister') return unitsPerBlister;
+  if (unit === 'box') return blistersPerBox * unitsPerBlister;
+  return 1; // 'piece'
 };
 
 export const getTabletCount = (m) => {

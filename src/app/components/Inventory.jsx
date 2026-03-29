@@ -26,6 +26,16 @@ export function Inventory({
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [showAddCategoryForm, setShowAddCategoryForm] = useState(false);
   const [newCategory, setNewCategory] = useState('');
+  
+  const isStaff = (currentUser?.role === 'staff');
+
+  // Force viewMode to 'all' and categoryFilter to 'All' for staff
+  useEffect(() => {
+    if (isStaff) {
+      setViewMode('all');
+      setCategoryFilter('All');
+    }
+  }, [isStaff]);
   const [editingMedicine, setEditingMedicine] = useState(undefined);
   const [showMedicineForm, setShowMedicineForm] = useState(false);
   const [viewingMedicine, setViewingMedicine] = useState(null);
@@ -35,7 +45,6 @@ export function Inventory({
   const safeCategories = useMemo(() => {
     return Array.isArray(categories) ? categories : [];
   }, [categories]);
-  const isStaff = (currentUser?.role === 'staff');
 
   useEffect(() => {
     const handler = (e) => {
@@ -52,11 +61,34 @@ export function Inventory({
         if (med) setViewingMedicine(med);
       }
     };
+    const highlightHandler = (e) => {
+      const { id } = e.detail || {};
+      if (id) {
+        setSearchTerm('');
+        setCategoryFilter('All');
+        const med = safeMedicines.find(m => m.id === id);
+        if (med) {
+          const groupId = (med.name || '').trim().toLowerCase();
+          setExpandedRows(prev => {
+            const next = new Set(prev);
+            next.add(groupId);
+            return next;
+          });
+          // Scroll to the row after a short delay
+          setTimeout(() => {
+            const row = document.getElementById(`group-${groupId}`);
+            if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 200);
+        }
+      }
+    };
     window.addEventListener('open-add-stock', handler);
     window.addEventListener('open-view-batches', viewBatchesHandler);
+    window.addEventListener('highlight-medicine', highlightHandler);
     return () => {
       window.removeEventListener('open-add-stock', handler);
       window.removeEventListener('open-view-batches', viewBatchesHandler);
+      window.removeEventListener('highlight-medicine', highlightHandler);
     };
   }, [safeMedicines]);
 
@@ -229,52 +261,52 @@ export function Inventory({
 
       <div className="bg-card rounded-lg border p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-md border overflow-hidden">
-            <button
-              onClick={() => {
-                setViewMode('all');
-                setSelectedCategory(null);
-              }}
-              className={`px-4 py-2 transition-colors ${viewMode === 'all' ? 'bg-blue-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-            >
-              All Products
-            </button>
-            <button
-              onClick={() => {
-                setViewMode('categories');
-                setSelectedCategory(null);
-                setCategoryFilter('All');
-                setSearchTerm('');
-              }}
-              className={`px-4 py-2 border-l transition-colors ${viewMode === 'categories' ? 'bg-blue-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-            >
-              Categories
-            </button>
-          </div>
-
-          {viewMode === 'all' && (
-            <>
-              <div className="relative min-w-[300px] flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search medicines by name or strength..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background"
-                />
-              </div>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
+          {!isStaff && (
+            <div className="inline-flex rounded-md border overflow-hidden">
+              <button
+                onClick={() => {
+                  setViewMode('all');
+                  setSelectedCategory(null);
+                }}
+                className={`px-4 py-2 transition-colors ${viewMode === 'all' ? 'bg-blue-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
               >
-                <option value="All">All Categories</option>
-                {safeCategories.map(cat => (
-                  <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
-                ))}
-              </select>
-            </>
+                All Products
+              </button>
+              <button
+                onClick={() => {
+                  setViewMode('categories');
+                  setSelectedCategory(null);
+                  setCategoryFilter('All');
+                  setSearchTerm('');
+                }}
+                className={`px-4 py-2 border-l transition-colors ${viewMode === 'categories' ? 'bg-blue-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+              >
+                Categories
+              </button>
+            </div>
+          )}
+
+          <div className="relative min-w-[300px] flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Search medicines by name or strength..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background"
+            />
+          </div>
+          {!isStaff && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
+            >
+              <option value="All">All Categories</option>
+              {safeCategories.map(cat => (
+                <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
+              ))}
+            </select>
           )}
         </div>
       </div>
@@ -358,13 +390,14 @@ export function Inventory({
                   <th className="text-right p-4 font-semibold">Total Variations</th>
                   <th className="text-right p-4 font-semibold">Total Stock</th>
                   <th className="text-center p-4 font-semibold">Status</th>
+                  <th className="text-center p-4 font-semibold">Tag</th>
                   {!isStaff && <th className="text-right p-4 font-semibold">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filteredMedicines.length === 0 ? (
                   <tr>
-                    <td colSpan={isStaff ? 6 : 7} className="p-8 text-center text-gray-500">
+                    <td colSpan={isStaff ? 7 : 8} className="p-8 text-center text-gray-500">
                       No medicines found. Try adding some or adjusting your search.
                     </td>
                   </tr>
@@ -372,9 +405,15 @@ export function Inventory({
                   groupedMedicines.map((group) => {
                     const status = getStockStatus(group.totalQuantity, group.minStockLevel);
                     const isExpanded = expandedRows.has(group.id);
+                    // Get tag from the first variation
+                    const tag = group.variations[0]?.tag || 'Non-Prescription';
                     return (
                       <Fragment key={group.id}>
-                        <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => toggleRow(group.id)}>
+                        <tr 
+                          id={`group-${group.id}`}
+                          className="hover:bg-gray-50/50 transition-colors cursor-pointer" 
+                          onClick={() => toggleRow(group.id)}
+                        >
                           <td className="p-4">
                             {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                           </td>
@@ -394,6 +433,17 @@ export function Inventory({
                             <div className="flex justify-center">
                               <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${status.color}`}>
                                 {status.label}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex justify-center">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${
+                                tag === 'Prescription' 
+                                  ? 'bg-purple-50 text-purple-700 border-purple-200' 
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}>
+                                {tag}
                               </span>
                             </div>
                           </td>
@@ -419,7 +469,9 @@ export function Inventory({
                                 <table className="min-w-full text-sm">
                                   <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                                     <tr>
+                                      <th className="p-3 text-left">Brand Name</th>
                                       <th className="p-3 text-left">Dosage & Strength</th>
+                                      <th className="p-3 text-left">Expiry Date</th>
                                       <th className="p-3 text-right">Stock</th>
                                       <th className="p-3 text-right">Price</th>
                                       <th className="p-3 text-right">Min Level</th>
@@ -429,6 +481,15 @@ export function Inventory({
                                   <tbody className="divide-y divide-gray-100">
                                     {group.variations.map((v) => {
                                       const vStatus = getStockStatus(v.totalQuantity, v.minStockLevel);
+                                      
+                                      // Find closest expiry date from active batches
+                                      const validBatches = (v.batches || [])
+                                        .filter(b => Number(b.quantity || 0) > 0)
+                                        .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+                                      
+                                      const closestExpiry = validBatches.length > 0 ? validBatches[0].expiryDate : 'N/A';
+                                      const isExpired = closestExpiry !== 'N/A' && new Date(closestExpiry) < new Date();
+
                                       return (
                                         <tr 
                                           key={v.id} 
@@ -436,10 +497,21 @@ export function Inventory({
                                           onClick={() => handleViewBatchesClick(v)}
                                         >
                                           <td className="p-3">
+                                            <span className="font-bold text-blue-700">{v.brandName || 'Generic'}</span>
+                                          </td>
+                                          <td className="p-3">
                                             <div className="flex items-center gap-2">
                                               <span className="font-semibold text-gray-900 capitalize">{v.dosageForm}</span>
                                               <span className="text-gray-500">•</span>
                                               <span className="text-gray-700">{v.strength}</span>
+                                            </div>
+                                          </td>
+                                          <td className="p-3">
+                                            <div className={`flex flex-col ${isExpired ? 'text-red-600' : 'text-gray-700'}`}>
+                                              <span className="font-medium">{closestExpiry}</span>
+                                              {validBatches.length > 1 && (
+                                                <span className="text-[10px] text-gray-400">+{validBatches.length - 1} more batches</span>
+                                              )}
                                             </div>
                                           </td>
                                           <td className="p-3 text-right font-medium">

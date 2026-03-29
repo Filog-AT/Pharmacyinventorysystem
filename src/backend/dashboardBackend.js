@@ -100,7 +100,7 @@ export const getSalesAggregates = (receipts) => {
   }
   (receipts || []).forEach(r => {
     const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-    const amount = Number(r.grandTotal || r.subtotal || 0);
+    const amount = Number(r.grandTotal || r.total || r.subtotal || 0);
     if (ts.toDateString() === now.toDateString()) {
       todayTotal += amount;
     }
@@ -149,29 +149,31 @@ export const getExpiringSoonItems = (medicines, statusModalWindow) => {
 export const getStockStatusCounts = (medicines, statusModalWindow) => {
   const today = new Date();
   let expired = 0, low = 0, expSoon = 0, normal = 0;
-  medicines.forEach(m => {
-    const qty = Number(m.totalQuantity || 0);
+  
+  (medicines || []).forEach(m => {
     const min = Number(m.minStockLevel || 50);
-    const hasExpired = Array.isArray(m.batches) && m.batches.some(b => {
+    
+    (m.batches || []).forEach(b => {
+      const qty = Number(b.quantity || 0);
+      if (qty <= 0) return; // Skip empty batches for status counts
+
       const d = b.expiryDate ? new Date(b.expiryDate) : null;
-      return d && !isNaN(d.getTime()) && d < today && Number(b.quantity || 0) > 0;
-    });
-    const hasSoon = Array.isArray(m.batches) && m.batches.some(b => {
-      const d = b.expiryDate ? new Date(b.expiryDate) : null;
-      if (!d || isNaN(d.getTime())) return false;
+      if (!d || isNaN(d.getTime())) return;
+      
       const days = Math.ceil((d.getTime() - today.getTime()) / 86400000);
-      return days > 0 && days <= statusModalWindow && Number(b.quantity || 0) > 0;
+      
+      if (d < today) {
+        expired += 1;
+      } else if (days > 0 && days <= statusModalWindow) {
+        expSoon += 1;
+      } else if (qty <= min) {
+        low += 1;
+      } else {
+        normal += 1;
+      }
     });
-    if (hasExpired) {
-      expired += 1;
-    } else if (hasSoon) {
-      expSoon += 1;
-    } else if (qty > 0 && qty <= min) {
-      low += 1;
-    } else if (qty > min) {
-      normal += 1;
-    }
   });
+  
   return { expired, low, expSoon, normal };
 };
 

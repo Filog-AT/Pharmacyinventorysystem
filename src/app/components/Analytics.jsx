@@ -85,11 +85,14 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
       const svc = await loadReceiptService();
       try {
         if (svc) {
+          console.log(`[Analytics] Fetching receipts for pharmacy: ${currentUser.pharmacyId}`);
           // Pass 0 to remove limit and get all receipts for full historical analysis
           const data = await svc.getReceipts(currentUser.pharmacyId, 0);
+          console.log(`[Analytics] Fetched ${data?.length || 0} receipts`);
           setReceipts(data || []);
         }
-      } catch {
+      } catch (err) {
+        console.error('[Analytics] Error fetching receipts:', err);
         setReceipts([]);
       }
     };
@@ -190,7 +193,8 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
           return;
         }
         const svc = await import('@/services/medicineService');
-        const sales = await svc.medicineService.getSalesLastNDays(currentUser.pharmacyId, selectedMedicineId, 180);
+        const med = medicines.find(m => m.id === selectedMedicineId);
+        const sales = await svc.medicineService.getSalesLastNDays(currentUser.pharmacyId, selectedMedicineId, 180, med?.name);
         if (!mounted) return;
         const byKey = new Map();
         const bucketKey = (d) => {
@@ -242,7 +246,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
         const total30 = last30.reduce((sum, r) => sum + Number(r.quantity_sold || 0), 0);
         const dailyUsage = total30 / 30;
         const predicted30 = dailyUsage * 30;
-        const med = medicines.find(m => m.id === selectedMedicineId);
         const currentStock = Number(med?.totalQuantity || 0);
         const daysRemaining = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : null;
         const stockoutDate = daysRemaining != null ? new Date(today.getTime() + daysRemaining * 86400000) : null;

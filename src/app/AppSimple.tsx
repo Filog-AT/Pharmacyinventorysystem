@@ -56,19 +56,51 @@ function AppSimple() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [medicines, setMedicines] = useState<any[]>([]);
+  const [pharmacyLogo, setPharmacyLogo] = useState<string>('');
+  const [sidebarColor, setSidebarColor] = useState<string>('');
+  const [contentColor, setContentColor] = useState<string>('');
 
   // Monitor auth state
   useEffect(() => {
-    const unsubscribe = userService.onAuthChanged((user) => {
+    const unsubscribe = userService.onAuthChanged(async (user) => {
       setCurrentUser(user);
       setAuthLoading(false);
       
-      // Update pharmacy name in settings if available
-      if (user?.pharmacyName) {
-        setSettings(prev => ({ ...prev, pharmacyName: user.pharmacyName || prev.pharmacyName }));
+      if (user?.pharmacyId) {
+        // Fetch pharmacy details
+        try {
+          const { pharmacyService } = await import('@/services/pharmacyService');
+          const pharmacy = await pharmacyService.getPharmacy(user.pharmacyId);
+          if (pharmacy) {
+            setPharmacyLogo(pharmacy.logoUrl || '');
+            setSidebarColor(pharmacy.sidebarColor || '');
+            setContentColor(pharmacy.contentColor || '');
+            setSettings(prev => ({ 
+              ...prev, 
+              pharmacyName: pharmacy.name || user.pharmacyName || prev.pharmacyName,
+              logoUrl: pharmacy.logoUrl || '',
+              sidebarColor: pharmacy.sidebarColor || '',
+              contentColor: pharmacy.contentColor || ''
+            }));
+          }
+        } catch (err) {
+          console.error('[AppSimple] Error fetching pharmacy details:', err);
+        }
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  // Listen for theme updates from Settings
+  useEffect(() => {
+    const handleThemeUpdate = (e: any) => {
+      const { logoUrl, sidebarColor, contentColor } = e.detail;
+      if (logoUrl !== undefined) setPharmacyLogo(logoUrl);
+      if (sidebarColor !== undefined) setSidebarColor(sidebarColor);
+      if (contentColor !== undefined) setContentColor(contentColor);
+    };
+    window.addEventListener('pharmacy-theme-updated', handleThemeUpdate);
+    return () => window.removeEventListener('pharmacy-theme-updated', handleThemeUpdate);
   }, []);
 
   const notifications = useMemo(() => {
@@ -132,12 +164,7 @@ function AppSimple() {
       
       // If user is logged in and tries to go back to an empty hash or login state
       if (currentUser && (!hash || hash === 'login')) {
-        if (confirm('Going back will sign you out. Continue?')) {
-          handleLogoutAction();
-        } else {
-          // Re-push current state to prevent going back
-          window.history.pushState(null, '', `#${activePage}`);
-        }
+        handleLogoutAction();
         return;
       }
 
@@ -365,9 +392,7 @@ function AppSimple() {
   };
 
   const handleLogout = () => {
-    if (confirm('Are you sure you want to sign out?')) {
-      handleLogoutAction();
-    }
+    handleLogoutAction();
   };
 
   const handleAddCategory = (newCategory: string) => {
@@ -668,6 +693,7 @@ function AppSimple() {
           return (
             <StaffDashboard
               medicines={medicines}
+              currentUser={currentUser}
             />
           );
         }
@@ -714,6 +740,8 @@ function AppSimple() {
             currentUser={currentUser}
             medicines={medicines}
             categories={categories}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
           />
         );
       case 'analytics':
@@ -729,10 +757,10 @@ function AppSimple() {
         if (currentUser?.role !== 'staff') {
           return <div className="p-6">Unauthorized</div>;
         }
-        return <Receipts medicines={medicines} currentUser={currentUser} />;
+        return <SalesPOS medicines={medicines} currentUser={currentUser} />;
       default:
         if (currentUser?.role === 'staff') {
-          return <StaffDashboard medicines={medicines} />;
+          return <StaffDashboard medicines={medicines} currentUser={currentUser} />;
         }
         return (
           <Dashboard
@@ -778,8 +806,13 @@ function AppSimple() {
         userName={currentUser.name}
         onLogout={handleLogout}
         pharmacyName={settings.pharmacyName}
+        logoUrl={pharmacyLogo}
+        sidebarColor={sidebarColor}
       />
-      <main className="lg:ml-64 min-h-screen flex flex-col">
+      <main 
+        className="lg:ml-64 min-h-screen flex flex-col transition-colors duration-500"
+        style={contentColor ? { backgroundColor: `${contentColor}10` } : {}} // 10 is hex for ~6% opacity for a subtle tint
+      >
         <div className="p-6 flex-1">
           <Toaster richColors position="top-right" />
           <ErrorBoundary>

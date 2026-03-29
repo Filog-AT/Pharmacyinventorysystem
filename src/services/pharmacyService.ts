@@ -10,6 +10,8 @@ export interface Pharmacy {
   name: string;
   managerId: string;
   createdAt: string;
+  logoUrl?: string;
+  sidebarColor?: string;
 }
 
 export const pharmacyService = {
