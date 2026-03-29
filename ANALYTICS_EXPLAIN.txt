@@ -27,7 +27,7 @@ that’s why the next values exist.
   • Reorder Point: Based on recent usage and a default service-level buffer. 
   this estimates:
 how many tablets we will probably sell in the next 30 days
-you calculate from past sales.
+you calculate from past sales (Likely Sales Demand).
 
 formula:
 daily usage = total sold in last 30 days ÷ 30
@@ -37,7 +37,7 @@ example:
 sold last 30 days = 900 tablets
 daily usage = 900 ÷ 30 = 30 tablets/day
 predicted 30-day demand = 30 × 30 = 900 tablets
-now the manager understands consumption speed.
+now the manager understands consumption speed (Expected Interest).
 why this is important
 
 now 200 tablets means:

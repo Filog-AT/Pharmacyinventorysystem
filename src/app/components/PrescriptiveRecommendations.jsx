@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { Lightbulb, AlertTriangle, Package, TrendingUp, CheckCircle, X } from 'lucide-react';
 import * as recommendationsBackend from '@/backend/recommendationsBackend';

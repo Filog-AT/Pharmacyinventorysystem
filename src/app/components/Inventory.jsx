@@ -29,11 +29,10 @@ export function Inventory({
   
   const isStaff = (currentUser?.role === 'staff');
 
-  // Force viewMode to 'all' and categoryFilter to 'All' for staff
+  // Force viewMode to 'all' for staff
   useEffect(() => {
     if (isStaff) {
       setViewMode('all');
-      setCategoryFilter('All');
     }
   }, [isStaff]);
   const [editingMedicine, setEditingMedicine] = useState(undefined);
@@ -296,18 +295,16 @@ export function Inventory({
               className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background"
             />
           </div>
-          {!isStaff && (
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
-            >
-              <option value="All">All Categories</option>
-              {safeCategories.map(cat => (
-                <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
-              ))}
-            </select>
-          )}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
+          >
+            <option value="All">All Categories</option>
+            {safeCategories.map(cat => (
+              <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 

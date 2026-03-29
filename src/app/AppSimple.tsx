@@ -811,7 +811,7 @@ function AppSimple() {
       />
       <main 
         className="lg:ml-64 min-h-screen flex flex-col transition-colors duration-500"
-        style={contentColor ? { backgroundColor: `${contentColor}10` } : {}} // 10 is hex for ~6% opacity for a subtle tint
+        style={contentColor ? { backgroundColor: `${contentColor}20` } : {}} // 20 is hex for ~12% opacity for a more visible tint
       >
         <div className="p-6 flex-1">
           <Toaster richColors position="top-right" />

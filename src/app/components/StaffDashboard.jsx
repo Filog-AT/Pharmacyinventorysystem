@@ -78,7 +78,8 @@ export function StaffDashboard({ medicines = [], currentUser }) {
     const hours = Array.from({ length: 24 }, (_, i) => ({
       hour: i,
       label: `${i}:00`,
-      sales: 0
+      sales: 0,
+      transactions: 0
     }));
 
     receipts.forEach(r => {
@@ -86,6 +87,7 @@ export function StaffDashboard({ medicines = [], currentUser }) {
       if (ts.toDateString() === todayStr) {
         const h = ts.getHours();
         hours[h].sales += Number(r.grandTotal || 0);
+        hours[h].transactions += 1;
       }
     });
 
@@ -192,10 +194,14 @@ export function StaffDashboard({ medicines = [], currentUser }) {
                   cursor={{fill:'#f8fafc'}}
                   content={({active, payload, label}) => {
                     if (active && payload?.length) {
+                      const data = payload[0].payload;
                       return (
                         <div className="bg-white border p-3 rounded-lg shadow-xl">
                           <p className="font-bold text-gray-900 border-b pb-1 mb-2">{label}</p>
-                          <p className="text-blue-600 font-bold">{formatPHP(payload[0].value)}</p>
+                          <div className="space-y-1">
+                            <p className="text-blue-600 font-bold text-lg">{formatPHP(data.sales)}</p>
+                            <p className="text-gray-500 text-xs font-semibold">{data.transactions} {data.transactions === 1 ? 'Transaction' : 'Transactions'}</p>
+                          </div>
                         </div>
                       );
                     }

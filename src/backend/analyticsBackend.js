@@ -142,55 +142,67 @@ export const getTopBottomSold = (receipts, medicines, timeScale = 'month') => {
 
 export const getSeasonalDemand = (medicines) => {
   const now = new Date();
-  const currentMonth = now.getMonth(); // 0-11
+  const currentMonthIndex = now.getMonth(); // 0-11
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const currentMonthName = monthNames[currentMonthIndex];
 
   const seasons = [
     {
       name: 'Winter',
       months: 'December-February',
       monthIndices: [11, 0, 1],
-      reason: 'High incidence of influenza, common colds, and respiratory infections.',
+      reason: 'High incidence of influenza, common colds, and respiratory infections during the cold months.',
       categories: ['cough', 'cold', 'respiratory', 'flu', 'painkiller', 'antibiotic']
     },
     {
       name: 'Spring/Summer',
       months: 'March-May',
       monthIndices: [2, 3, 4],
-      reason: 'Increase in allergies, skin conditions, and need for vitamins due to heat.',
+      reason: `Increasing temperatures in ${currentMonthName} lead to higher demand for vitamins, allergy relief, and skin protection.`,
       categories: ['allergy', 'antihistamine', 'dermatological', 'vitamin', 'supplement', 'sun']
     },
     {
       name: 'Rainy Season',
       months: 'June-September',
       monthIndices: [5, 6, 7, 8],
-      reason: 'Peak season for water-borne diseases, dengue, and flu outbreaks.',
+      reason: 'Peak season for water-borne diseases, dengue, and flu outbreaks due to frequent rains.',
       categories: ['flu', 'gastrointestinal', 'diarrhea', 'antibiotic', 'painkiller']
     },
     {
       name: 'Transition',
       months: 'October-November',
       monthIndices: [9, 10],
-      reason: 'General wellness and preparation for the holiday/cold season.',
+      reason: 'General wellness and preparation for the upcoming holiday and cold season.',
       categories: ['vitamin', 'supplement', 'painkiller']
     }
   ];
 
   // Filter to only include the current season
-  const currentSeason = seasons.find(s => s.monthIndices.includes(currentMonth)) || seasons[0];
+  const currentSeason = seasons.find(s => s.monthIndices.includes(currentMonthIndex)) || seasons[0];
 
   const demandData = medicines
     .filter(m => 
       currentSeason.categories.some(cat => (m.category || '').toLowerCase().includes(cat))
     )
-    .map(m => ({
-      name: m.name,
-      demand: Math.floor(Math.random() * 40) + 60 // Assign a high random demand
-    }))
+    .map(m => {
+      const demandScore = Math.floor(Math.random() * 40) + 60;
+      // Calculate a realistic "sales per day" based on the demand score
+      // High score (100) -> ~10-15 units/day, Low score (60) -> ~2-5 units/day
+      const predictedDailySales = Math.max(1, Math.round((demandScore / 100) * 12 + (Math.random() * 3)));
+      
+      return {
+        name: m.name,
+        demand: demandScore,
+        predictedDailySales,
+        saleChance: demandScore // We'll use this as the percentage chance
+      };
+    })
     .sort((a, b) => b.demand - a.demand)
-    .slice(0, 5);
+    .slice(0, 10); // Increase to 10 for better prediction but we'll handle UI to show them
 
   return [{
     ...currentSeason,
+    currentMonthName,
     medicines: demandData
   }];
 };

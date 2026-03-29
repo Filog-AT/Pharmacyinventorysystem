@@ -13,10 +13,13 @@ export const getRecommendations = (medicines, today) => {
   };
 
   const addRecommendation = (m, data) => {
-    if (!medRecommendations.has(m.id)) {
-      medRecommendations.set(m.id, {
-        id: m.id,
-        product: m.name,
+    // Generate a unique ID based on name, strength, and dosage form to avoid duplicates
+    const uniqueId = `${m.name}|${m.strength}|${m.dosageForm}`.toLowerCase();
+    
+    if (!medRecommendations.has(uniqueId)) {
+      medRecommendations.set(uniqueId, {
+        id: uniqueId,
+        product: `${m.name} ${m.strength} (${m.dosageForm})`,
         stock: `${m.totalQuantity || 0} ${m.unit || ''}`.trim(),
         status: 'Normal',
         priority: 'LOW',
@@ -24,7 +27,7 @@ export const getRecommendations = (medicines, today) => {
         reason: ''
       });
     }
-    const entry = medRecommendations.get(m.id);
+    const entry = medRecommendations.get(uniqueId);
     
     if (data.status) entry.status = data.status;
     if (data.priority) {

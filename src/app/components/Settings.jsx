@@ -95,8 +95,10 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
           let width = img.width;
           let height = img.height;
 
-          // Downsize for sidebar logo (max 600px for better quality on larger displays)
-          const MAX_SIZE = 600;
+          const { dominant, mixed } = extractThemeColors(img);
+          
+          // Downsize for sidebar logo (max 300px for much faster upload/display)
+          const MAX_SIZE = 300;
           if (width > height) {
             if (width > MAX_SIZE) {
               height *= MAX_SIZE / width;
@@ -114,11 +116,9 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
           
-          const { dominant, mixed } = extractThemeColors(img);
-          canvas.toBlob((blob) => {
-            const previewUrl = URL.createObjectURL(blob);
-            resolve({ blob, dominant, mixed, previewUrl });
-          }, 'image/jpeg', 0.8);
+          // Get base64 string for faster storage in Firestore (JPEG 0.5 for ultra-fast upload)
+          const base64 = canvas.toDataURL('image/jpeg', 0.5); 
+          resolve({ base64, dominant, mixed, previewUrl: base64 });
         };
         img.src = e.target.result;
       };
@@ -130,6 +130,12 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
     const file = e.target.files[0];
     if (!file || !currentUser?.pharmacyId) return;
 
+    // Limit file size to 1MB before processing for performance
+    if (file.size > 1 * 1024 * 1024) {
+      toast.error('Logo file is too large. Please use an image under 1MB.');
+      return;
+    }
+
     const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (!supportedTypes.includes(file.type)) {
       toast.error('Please upload a valid image (PNG, JPEG, JPG, or WEBP)');
@@ -137,52 +143,36 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
     }
 
     setUploadingLogo(true);
-    // Removed blocking toast for faster feel
     
     try {
-      const { blob, dominant, mixed, previewUrl } = await compressImage(file);
+      const { base64, dominant, mixed } = await compressImage(file);
       
       // 1. Optimistic Update (Immediate UI feedback)
-      setLogoUrl(previewUrl);
+      setLogoUrl(base64);
       setSidebarColor(dominant);
       
       const newSettings = { 
         ...settings, 
-        logoUrl: previewUrl, 
+        logoUrl: base64, 
         sidebarColor: dominant,
         contentColor: mixed 
       };
       
+      // Update global context/state immediately
       onUpdateSettings?.(newSettings);
       
       window.dispatchEvent(new CustomEvent('pharmacy-theme-updated', { 
-        detail: { logoUrl: previewUrl, sidebarColor: dominant, contentColor: mixed } 
+        detail: { logoUrl: base64, sidebarColor: dominant, contentColor: mixed } 
       }));
 
-      // 2. Background Upload
-      const storageRef = ref(storage, `pharmacies/${currentUser.pharmacyId}/logo`);
-      const uploadTask = uploadBytes(storageRef, blob);
-      
-      // 3. Update Firestore immediately without waiting for storage completion
-      // This makes it feel much faster
+      // 2. Store directly in Firestore (much faster than Storage for small compressed logos)
       await pharmacyService.updatePharmacy(currentUser.pharmacyId, {
+        logoUrl: base64,
         sidebarColor: dominant,
         contentColor: mixed
       });
 
-      const snapshot = await uploadTask;
-      const url = await getDownloadURL(snapshot.ref);
-
-      // 4. Final update with permanent URL
-      await pharmacyService.updatePharmacy(currentUser.pharmacyId, {
-        logoUrl: url,
-        sidebarColor: dominant,
-        contentColor: mixed
-      });
-
-      setLogoUrl(url);
-      onUpdateSettings?.({ ...newSettings, logoUrl: url });
-      toast.success('Logo and theme updated!');
+      toast.success('Logo updated successfully!');
     } catch (err) {
       console.error('[Settings] Logo upload error:', err);
       toast.error('Failed to update logo.');
@@ -1062,6 +1052,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                           medicinesToCreate.push({
                             name: group.name,
                             category: group.category,
+                            tag: group.tag, // Pass the tag here
                             ...v
                           });
                         }
@@ -1081,13 +1072,15 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                           return;
                         }
 
-                        const categoryObj = categories.find(c => c.name === item.category) || categories[0];
+                        let categoryObj = categories.find(c => c.name === item.category);
                         if (!categoryObj || !categoryObj.id) {
                           // Try to create the category if it doesn't exist
                           try {
                             const { categoryService } = await import('@/services/categoryService');
                             const newCatId = await categoryService.addCategory(currentUser.pharmacyId, item.category);
                             categoryObj = { id: newCatId, name: item.category };
+                            // Refresh categories locally so next items can find it
+                            categories.push(categoryObj);
                             window.dispatchEvent(new Event('refresh-categories'));
                           } catch (catErr) {
                             console.warn('Failed to auto-create category:', item.category);
@@ -1105,7 +1098,7 @@ export function Settings({ userRole, onNavigateToTab, settings, onUpdateSettings
                             strength: item.strength,
                             unit: item.unit,
                             category: item.category,
-                            tag: group.tag || 'Non-Prescription',
+                            tag: item.tag || 'Non-Prescription',
                             price,
                             minStockLevel,
                             batches: [],

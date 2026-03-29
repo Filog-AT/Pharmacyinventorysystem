@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, Package, AlertTriangle, Calendar, TrendingUp, XCircle, Bell, CheckCircle, ChevronRight, X } from 'lucide-react';
+import { Plus, Search, Package, AlertTriangle, Calendar, TrendingUp, XCircle, Bell, CheckCircle, ChevronRight, X, Lightbulb, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { MedicineCard } from '@/app/components/MedicineCard';
 import { MedicineForm } from '@/app/components/MedicineForm';
@@ -855,7 +855,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
         </div>
 
         {/* Revenue Trend Section (Now Second) */}
-        <section className="bg-white rounded-lg border p-6 shadow-sm flex flex-col h-[480px]">
+        <section className="bg-white rounded-lg border p-6 shadow-sm flex flex-col h-[520px]">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Revenue Trend</h2>
@@ -882,7 +882,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             </div>
           </div>
           
-          <div className="flex-1 w-full">
+          <div className="flex-1 w-full pb-4">
             <ChartContainer
               config={{ 
                 total: { label: 'Revenue', color: '#3b82f6' },
@@ -890,7 +890,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
               }}
               className="h-full w-full"
             >
-              <BarChart data={revenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <BarChart data={revenueData} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis 
                   dataKey="label" 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Lightbulb } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Tooltip as RTooltip } from 'recharts';
 import { PrescriptiveRecommendations } from '@/app/components/PrescriptiveRecommendations';
@@ -211,6 +211,8 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
             return `${y}-${m}-${dd}`;
           } else if (timeScale === 'month') {
             return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
+          } else if (timeScale === 'yearly') {
+            return `${dt.getFullYear()}`;
           }
           return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
         };
@@ -233,7 +235,11 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
         });
         let series = Array.from(byKey.entries()).sort((a,b) => a[0].localeCompare(b[0])).map(([label, units]) => ({ label, units }));
         if (timeScale === 'day') {
-          series = series.slice(-30);
+          series = series.slice(-7);
+        } else if (timeScale === 'week') {
+          series = series.slice(-8);
+        } else if (timeScale === 'month') {
+          series = series.slice(-12);
         }
         setSelectedSeries(series);
         // Predictive metrics using last 30 days moving average
@@ -287,9 +293,31 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
         <h2 className="text-xl font-semibold">Usage & Sales Summary</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Medicine Sales Trend (Last 30 days) */}
-          <div className="bg-white rounded-lg border p-4 flex flex-col h-[600px]">
+          <div className="bg-white rounded-lg border p-4 flex flex-col min-h-[600px] h-auto shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">Medicine Sales</h3>
+              <div className="flex flex-col">
+                <h3 className="font-bold text-lg text-gray-900">Medicine Sales</h3>
+                <div className="flex bg-gray-100 p-0.5 rounded-md mt-2 w-fit">
+                  {[
+                    { id: 'day', label: 'Daily' },
+                    { id: 'week', label: 'Weekly' },
+                    { id: 'month', label: 'Monthly' },
+                    { id: 'yearly', label: 'Yearly' }
+                  ].map((ts) => (
+                    <button
+                      key={ts.id}
+                      onClick={() => setTimeScale(ts.id)}
+                      className={`px-3 py-1 text-[10px] rounded transition-all ${
+                        timeScale === ts.id 
+                          ? 'bg-white shadow-sm text-blue-600 font-bold' 
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      {ts.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <select
                 value={selectedMedicineId}
                 onChange={(e) => setSelectedMedicineId(e.target.value)}
@@ -300,7 +328,7 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
                 ))}
               </select>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-[400px]">
               {selectedSeries.length > 0 && selectedSeries.some(d => d.units > 0) ? (
                 <ChartContainer
                   config={{ units: { label: 'Units sold', color: '#3B82F6' } }}
@@ -317,7 +345,7 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
                   </ResponsiveContainer>
                 </ChartContainer>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-2">
+                <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground gap-2">
                   <TrendingUp className="w-8 h-8 opacity-20" />
                   <p className="text-sm italic text-center">No sales recorded for this medicine in the last 30 days.</p>
                 </div>
@@ -326,96 +354,180 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
           </div>
 
           {/* Demand Prediction */}
-          <div className="bg-white rounded-lg border p-4 flex flex-col h-[600px]">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium">Demand Prediction</h3>
+          <div className="bg-white rounded-lg border p-6 flex flex-col min-h-[600px] h-auto shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-purple-600" />
+                <h3 className="font-bold text-lg text-gray-900">Demand Prediction</h3>
+              </div>
+              <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-full uppercase tracking-widest">
+                {seasonalDemand[0]?.currentMonthName} Analysis
+              </span>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+            <div className="flex-1 space-y-6">
               {seasonalDemand.map((season, idx) => (
-                <div key={idx} className="border-b pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-bold text-sm text-gray-800">{season.months} ({season.name})</h4>
+                <div key={idx} className="pb-6 last:pb-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-black text-sm text-gray-800 uppercase tracking-tight flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
+                      {season.currentMonthName} ({season.months}) — {season.name}
+                    </h4>
                   </div>
-                  <p className="text-xs text-gray-600 italic mb-3">{season.reason}</p>
+                  <p className="text-xs text-gray-500 font-medium leading-relaxed mb-4 bg-purple-50 p-2.5 rounded-lg border border-purple-100/50">
+                    {season.reason}
+                  </p>
+
+                  <div className="flex items-center gap-1.5 mb-4 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                    <Lightbulb className="w-3 h-3 text-purple-400" />
+                    <span>Predicted Daily Sales & Chance based on seasonal patterns</span>
+                  </div>
                   
                    {season.medicines.length > 0 ? (
-                    <div className="h-[140px]">
-                      <ChartContainer config={{ demand: { label: 'Demand', color: '#8b5cf6' } }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={season.medicines} margin={{ top: 10, bottom: 25 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis 
+                    <div className="h-auto w-full min-h-[160px]">
+                      <ChartContainer config={{ demand: { label: 'Predicted Daily Sales', color: '#8b5cf6' } }}>
+                        <ResponsiveContainer width="100%" height={season.medicines.length * 40 + 20}>
+                          <BarChart data={season.medicines} layout="vertical" margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                            <XAxis type="number" hide domain={[0, 'dataMax + 2']} />
+                            <YAxis 
                               dataKey="name" 
-                              fontSize={8} 
+                              type="category"
+                              fontSize={11} 
+                              fontWeight={700}
+                              tick={{ fill: '#4b5563' }}
                               tickLine={false} 
                               axisLine={false} 
-                              interval={0} 
-                              angle={-30} 
-                              textAnchor="end" 
-                              height={40}
+                              width={120}
                             />
-                            <YAxis hide domain={[0, 100]} />
-                            <ChartTooltip content={<ChartTooltipContent />} />
+                            <ChartTooltip 
+                                content={({ active, payload }) => {
+                                  if (active && payload && payload.length) {
+                                    const data = payload[0].payload;
+                                    return (
+                                      <div className="bg-white p-3 border rounded-lg shadow-xl">
+                                        <p className="text-sm font-bold text-gray-900 mb-2 border-b pb-1">{data.name}</p>
+                                        <div className="space-y-2">
+                                          <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center gap-2">
+                                              <TrendingUp className="w-3 h-3 text-purple-500" />
+                                              <span className="text-xs text-gray-600">Daily Sales</span>
+                                            </div>
+                                            <span className="text-xs font-bold text-purple-700">~{data.predictedDailySales} units/day</span>
+                                          </div>
+                                          <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                                              <span className="text-xs text-gray-600">Sale Chance</span>
+                                            </div>
+                                            <span className="text-xs font-bold text-emerald-700">{data.saleChance}%</span>
+                                          </div>
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-2 leading-tight">
+                                          A higher score means this medicine is more likely to be sold in {season.currentMonthName} based on <strong>Seasonal Public Health Trends</strong>.
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                }}
+                              />
                             <Bar 
-                              dataKey="demand" 
+                              dataKey="predictedDailySales" 
                               fill="var(--color-demand, #8b5cf6)" 
-                              radius={[4, 4, 0, 0]} 
-                              barSize={18}
+                              radius={[0, 4, 4, 0]} 
+                              barSize={20}
                             />
                           </BarChart>
                         </ResponsiveContainer>
                       </ChartContainer>
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-400">No specific medicines mapped for this season.</p>
+                    <div className="py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                      <p className="text-xs text-gray-400 font-medium italic">No specific medicines mapped for this season.</p>
+                    </div>
                   )}
                 </div>
               ))}
+            </div>
+            
+            {/* Added content at the bottom to make it sense to the user */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lightbulb className="w-4 h-4 text-blue-600" />
+                  <p className="text-xs font-black text-blue-800 uppercase tracking-wider">Inventory Strategy Advice</p>
+                </div>
+                <p className="text-[11px] text-blue-700 leading-relaxed font-medium">
+                  Increase stock levels for <span className="font-bold underline">Vitamins</span> and <span className="font-bold underline">Flu Medicines</span> at least 2 weeks before the predicted peak seasons. Monitor usage rates weekly to adjust reorder points dynamically.
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg border p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-emerald-700 text-sm">Most Sold Medicines</h3>
-              <div className="flex bg-gray-100 p-0.5 rounded-md scale-90">
-                <button
-                  onClick={() => setTopSoldTimeScale('weekly')}
-                  className={`px-2 py-1 text-[10px] rounded transition-all ${topSoldTimeScale === 'weekly' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Weekly
-                </button>
-                <button
-                  onClick={() => setTopSoldTimeScale('month')}
-                  className={`px-2 py-1 text-[10px] rounded transition-all ${topSoldTimeScale === 'month' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Monthly
-                </button>
-                <button
-                  onClick={() => setTopSoldTimeScale('yearly')}
-                  className={`px-2 py-1 text-[10px] rounded transition-all ${topSoldTimeScale === 'yearly' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Yearly
-                </button>
+          <div className="bg-white rounded-lg border-2 border-emerald-100 p-6 relative shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-col">
+                <h3 className="font-black text-emerald-800 text-lg uppercase tracking-tight">Fast-Moving Items</h3>
+                <p className="text-xs text-emerald-600 font-medium">Highest sales volume items this {topSoldTimeScale}</p>
+              </div>
+              <div className="flex bg-emerald-50 p-1 rounded-lg scale-95 border border-emerald-100">
+                {[
+                  { id: 'weekly', label: 'Wk' },
+                  { id: 'month', label: 'Mo' },
+                  { id: 'yearly', label: 'Yr' }
+                ].map((ts) => (
+                  <button
+                    key={ts.id}
+                    onClick={() => setTopSoldTimeScale(ts.id)}
+                    className={`px-3 py-1.5 text-[11px] rounded-md transition-all ${
+                      topSoldTimeScale === ts.id 
+                        ? 'bg-white shadow-sm text-emerald-700 font-bold' 
+                        : 'text-emerald-500 hover:text-emerald-700'
+                    }`}
+                  >
+                    {ts.label}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="h-[300px]">
+            <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topSoldData} layout="vertical" margin={{ left: 10, right: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <BarChart data={topSoldData} layout="vertical" margin={{ left: 10, right: 80 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#ecfdf5" />
                   <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" fontSize={9} width={90} tick={{fill: '#4b5563'}} />
-                  <RTooltip />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    fontSize={11} 
+                    width={100} 
+                    tick={{fill: '#065f46', fontWeight: 600}} 
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RTooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-white p-2 border border-emerald-100 rounded-lg shadow-xl text-xs">
+                            <p className="font-bold text-emerald-900">{payload[0].payload.name}</p>
+                            <p className="text-emerald-600">{payload[0].value} units sold</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
                   <Bar 
                     dataKey="sales" 
                     fill="#10b981" 
-                    radius={[0, 4, 4, 0]} 
-                    barSize={12}
+                    radius={[0, 6, 6, 0]} 
+                    barSize={16}
                     label={{ 
                       position: 'right', 
-                      fontSize: 10, 
-                      fontWeight: 700, 
+                      fontSize: 12, 
+                      fontWeight: 800, 
                       fill: '#065f46',
                       formatter: (val) => `${val} sold`
                     }}
@@ -425,46 +537,68 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-rose-700 text-sm">Least Sold Medicines</h3>
-              <div className="flex bg-gray-100 p-0.5 rounded-md scale-90">
-                <button
-                  onClick={() => setLeastSoldTimeScale('weekly')}
-                  className={`px-2 py-1 text-[10px] rounded transition-all ${leastSoldTimeScale === 'weekly' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Weekly
-                </button>
-                <button
-                  onClick={() => setLeastSoldTimeScale('month')}
-                  className={`px-2 py-1 text-[10px] rounded transition-all ${leastSoldTimeScale === 'month' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Monthly
-                </button>
-                <button
-                  onClick={() => setLeastSoldTimeScale('yearly')}
-                  className={`px-2 py-1 text-[10px] rounded transition-all ${leastSoldTimeScale === 'yearly' ? 'bg-white shadow-sm text-blue-600 font-bold' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                  Yearly
-                </button>
+          <div className="bg-white rounded-lg border-2 border-rose-100 p-6 relative shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-col">
+                <h3 className="font-black text-rose-800 text-lg uppercase tracking-tight">Slow-Moving Items</h3>
+                <p className="text-xs text-rose-600 font-medium">Items with lowest sales activity this {leastSoldTimeScale}</p>
+              </div>
+              <div className="flex bg-rose-50 p-1 rounded-lg scale-95 border border-rose-100">
+                {[
+                  { id: 'weekly', label: 'Wk' },
+                  { id: 'month', label: 'Mo' },
+                  { id: 'yearly', label: 'Yr' }
+                ].map((ts) => (
+                  <button
+                    key={ts.id}
+                    onClick={() => setLeastSoldTimeScale(ts.id)}
+                    className={`px-3 py-1.5 text-[11px] rounded-md transition-all ${
+                      leastSoldTimeScale === ts.id 
+                        ? 'bg-white shadow-sm text-rose-700 font-bold' 
+                        : 'text-rose-500 hover:text-rose-700'
+                    }`}
+                  >
+                    {ts.label}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="h-[300px]">
+            <div className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={leastSoldData} layout="vertical" margin={{ left: 10, right: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <BarChart data={leastSoldData} layout="vertical" margin={{ left: 10, right: 80 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#fff1f2" />
                   <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" fontSize={9} width={90} tick={{fill: '#4b5563'}} />
-                  <RTooltip />
+                  <YAxis 
+                    dataKey="name" 
+                    type="category" 
+                    fontSize={11} 
+                    width={100} 
+                    tick={{fill: '#9f1239', fontWeight: 600}} 
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RTooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-white p-2 border border-rose-100 rounded-lg shadow-xl text-xs">
+                            <p className="font-bold text-rose-900">{payload[0].payload.name}</p>
+                            <p className="text-rose-600">{payload[0].value} units sold</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
                   <Bar 
                     dataKey="sales" 
                     fill="#f43f5e" 
-                    radius={[0, 4, 4, 0]} 
-                    barSize={12}
+                    radius={[0, 6, 6, 0]} 
+                    barSize={16}
                     label={{ 
                       position: 'right', 
-                      fontSize: 10, 
-                      fontWeight: 700, 
+                      fontSize: 12, 
+                      fontWeight: 800, 
                       fill: '#9f1239',
                       formatter: (val) => `${val} sold`
                     }}
