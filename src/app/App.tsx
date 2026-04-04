@@ -284,7 +284,7 @@ function App() {
       case 'notifications':
         return <Notifications medicines={medicines} />;
       case 'settings':
-        return <Settings userRole={currentUser?.role} onNavigateToTab={setActivePage} />;
+        return <Settings userRole={currentUser?.role} onNavigateToTab={setActivePage} currentUser={currentUser} />;
       case 'orders':
         return <OrdersSuppliers />;
       default:

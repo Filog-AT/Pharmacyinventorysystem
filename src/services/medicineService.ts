@@ -52,24 +52,37 @@ export const medicineService = {
     }
   },
 
-  // Find medicine by name, dosageForm and strength
-  async findMedicine(pharmacyId: string, name: string, dosageForm: string, strength: string): Promise<Medicine | null> {
+  // Find medicine by name, brandName, dosageForm and strength (Case Insensitive)
+  async findMedicine(pharmacyId: string, name: string, brandName: string, dosageForm: string, strength: string): Promise<Medicine | null> {
     try {
       const categories = await categoryService.getCategories(pharmacyId);
       if (categories.length === 0) return null;
 
+      const targetName = name.trim().toLowerCase();
+      const targetBrand = (brandName || '').trim().toLowerCase();
+      const targetForm = dosageForm.trim().toLowerCase();
+      const targetStrength = strength.trim().toLowerCase();
+
       const findPromises = categories.map(async (cat) => {
         if (!cat.id) return null;
-        const q = query(
-          collection(db, 'pharmacies', pharmacyId, 'categories', cat.id, 'medicines'),
-          where('name', '==', name.trim()),
-          where('dosageForm', '==', dosageForm.trim()),
-          where('strength', '==', strength.trim())
-        );
-        const snap = await getDocs(q);
-        if (snap.empty) return null;
-        const docSnap = snap.docs[0];
-        return { id: docSnap.id, ...docSnap.data() } as Medicine;
+        
+        // Fetch all medicines in category to perform case-insensitive match locally
+        // Firestore '==' is case-sensitive and doesn't support case-insensitive natively
+        const medsRef = collection(db, 'pharmacies', pharmacyId, 'categories', cat.id, 'medicines');
+        const snap = await getDocs(medsRef);
+        
+        const foundDoc = snap.docs.find(doc => {
+          const data = doc.data();
+          return (
+            String(data.name || '').trim().toLowerCase() === targetName &&
+            String(data.brandName || '').trim().toLowerCase() === targetBrand &&
+            String(data.dosageForm || '').trim().toLowerCase() === targetForm &&
+            String(data.strength || '').trim().toLowerCase() === targetStrength
+          );
+        });
+
+        if (!foundDoc) return null;
+        return { id: foundDoc.id, ...foundDoc.data() } as Medicine;
       });
 
       const results = await Promise.all(findPromises);
@@ -85,12 +98,17 @@ export const medicineService = {
     try {
       if (!pharmacyId || !categoryId) throw new Error('Pharmacy ID and Category ID are required');
       
-      const name = (medicineData.name || '').trim();
+      // Force Title Case for name and brandName
+      const toTitleCase = (str: string) => 
+        str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+      const name = toTitleCase((medicineData.name || '').trim());
+      const brandName = toTitleCase((medicineData.brandName || '').trim());
       const dosageForm = (medicineData.dosageForm || 'tablet').trim();
       const strength = (medicineData.strength || '').trim();
 
-      // Check for duplicates first
-      const existing = await this.findMedicine(pharmacyId, name, dosageForm, strength);
+      // Check for duplicates first including brandName (case-insensitive findMedicine handles this)
+      const existing = await this.findMedicine(pharmacyId, name, brandName, dosageForm, strength);
       if (existing) {
         throw new Error('Medicine already exists. Please add stock to the existing product.');
       }
@@ -100,6 +118,7 @@ export const medicineService = {
         pharmacyId,
         categoryId,
         name,
+        brandName,
         dosageForm,
         strength,
         batches: medicineData.batches || [],

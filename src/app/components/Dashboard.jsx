@@ -34,10 +34,11 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   const [tagModal, setTagModal] = useState({ open: false, tag: null });
   const [searchRecommendations, setSearchRecommendations] = useState([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [showValueBreakdown, setShowValueBreakdown] = useState(false);
 
-  const revenueData = useMemo(() => {
-    return analyticsBackend.getRevenueData(receipts, revenueTimeScale);
-  }, [receipts, revenueTimeScale]);
+  const inventoryBreakdown = useMemo(() => {
+    return dashboardBackend.getInventoryValueBreakdown(medicines, statusModal.window);
+  }, [medicines, statusModal.window]);
 
   let receiptServiceModule;
   const loadReceiptService = async () => {
@@ -81,6 +82,10 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       window.removeEventListener('refresh-receipts', loadData);
     };
   }, [currentUser?.pharmacyId]);
+
+  const seasonalDemand = useMemo(() => {
+    return analyticsBackend.getSeasonalDemand(medicines);
+  }, [medicines]);
 
   // Ensure categories is always an array and unique
   const safeCategories = useMemo(() => {
@@ -175,6 +180,13 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
   const salesAggregates = useMemo(() => {
     return dashboardBackend.getSalesAggregates(receipts);
   }, [receipts]);
+
+  const revenueData = useMemo(() => {
+    if (revenueTimeScale === 'daily') {
+      return salesAggregates.dailyData || [];
+    }
+    return analyticsBackend.getRevenueData(receipts, revenueTimeScale);
+  }, [receipts, revenueTimeScale, salesAggregates.dailyData]);
 
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -585,6 +597,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           value={new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(stats.totalValue)}
           icon={TrendingUp}
           color="bg-violet-100 text-violet-800 border-violet-200"
+          onClick={() => setShowValueBreakdown(true)}
         />
         <StatsCard
           title="Today’s Sales (₱)"
@@ -781,76 +794,101 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Stock Status Card (Now First) */}
-        <div className="bg-card rounded-lg border p-6 shadow-sm h-[480px] flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xl font-bold text-gray-900">Stock Status</h3>
-            <span className="text-xs text-muted-foreground">Window: {expSoonDays}d</span>
+        {/* Demand Prediction (Relocated from Analytics) */}
+        <div className="bg-white rounded-lg border p-6 flex flex-col min-h-[520px] max-h-[520px] shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-purple-600" />
+              <h3 className="font-bold text-lg text-gray-900">Demand Prediction</h3>
+            </div>
+            <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-full uppercase tracking-widest">
+              {seasonalDemand[0]?.currentMonthName} Analysis
+            </span>
           </div>
-          <div className="flex flex-col items-center flex-1 justify-center">
-            <div className="w-full h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={[
-                    { name: 'Normal', batches: stockStatusCounts.normal, color: '#22c55e' },
-                    { name: 'Low', batches: stockStatusCounts.low, color: '#f59e0b' },
-                    { name: 'Soon', batches: stockStatusCounts.expSoon, color: '#3b82f6' },
-                    { name: 'Expired', batches: stockStatusCounts.expired, color: '#ef4444' },
-                  ]}
-                  margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                  <RTooltip 
-                    cursor={{ fill: 'transparent' }}
-                    formatter={(value) => [`${value} Batches`, 'Count']}
-                  />
-                  <Bar dataKey="batches" radius={[4, 4, 0, 0]}>
-                    {
-                      [
-                        { name: 'Normal', color: '#22c55e' },
-                        { name: 'Low', color: '#f59e0b' },
-                        { name: 'Soon', color: '#3b82f6' },
-                        { name: 'Expired', color: '#ef4444' }
-                      ].map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))
-                    }
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-2 w-full max-w-sm mt-4 px-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#22c55e' }}></span>
-                  <span className="text-sm">Normal</span>
+          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-6">
+            {seasonalDemand.map((season, idx) => (
+              <div key={idx} className="pb-6 last:pb-0">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-black text-sm text-gray-800 uppercase tracking-tight flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
+                    {season.currentMonthName} ({season.months}) — {season.name}
+                  </h4>
                 </div>
-                <span className="text-sm font-semibold">{stockStatusCounts.normal}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#f59e0b' }}></span>
-                  <span className="text-sm">Low</span>
+                <p className="text-xs text-gray-500 font-medium leading-relaxed mb-4 bg-purple-50 p-2.5 rounded-lg border border-purple-100/50">
+                  {season.reason}
+                </p>
+
+                <div className="flex items-center gap-1.5 mb-4 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                  <Lightbulb className="w-3 h-3 text-purple-400" />
+                  <span>Predicted Daily Sales & Chance based on seasonal patterns</span>
                 </div>
-                <span className="text-sm font-semibold">{stockStatusCounts.low}</span>
+                
+                 {season.medicines.length > 0 ? (
+                  <div className="h-auto w-full min-h-[160px]">
+                    <ChartContainer config={{ demand: { label: 'Predicted Daily Sales', color: '#8b5cf6' } }}>
+                      <ResponsiveContainer width="100%" height={season.medicines.length * 40 + 20}>
+                        <BarChart data={season.medicines} layout="vertical" margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                          <XAxis type="number" hide domain={[0, 'dataMax + 2']} />
+                          <YAxis 
+                            dataKey="name" 
+                            type="category"
+                            fontSize={11} 
+                            fontWeight={700}
+                            tick={{ fill: '#4b5563' }}
+                            tickLine={false} 
+                            axisLine={false} 
+                            width={120}
+                          />
+                          <ChartTooltip 
+                              content={({ active, payload }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload;
+                                  return (
+                                    <div className="bg-white p-3 border rounded-lg shadow-xl">
+                                      <p className="text-sm font-bold text-gray-900 mb-2 border-b pb-1">{data.name}</p>
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between gap-4">
+                                          <div className="flex items-center gap-2">
+                                            <TrendingUp className="w-3 h-3 text-purple-500" />
+                                            <span className="text-xs text-gray-600">Daily Sales</span>
+                                          </div>
+                                          <span className="text-xs font-bold text-purple-700">~{data.predictedDailySales} units/day</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                                            <span className="text-xs text-gray-600">Sale Chance</span>
+                                          </div>
+                                          <span className="text-xs font-bold text-emerald-700">{data.saleChance}%</span>
+                                        </div>
+                                      </div>
+                                      <p className="text-[10px] text-gray-400 mt-2 leading-tight">
+                                        A higher score means this medicine is more likely to be sold in {season.currentMonthName} based on <strong>Seasonal Public Health Trends</strong>.
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                          <Bar 
+                            dataKey="predictedDailySales" 
+                            fill="var(--color-demand, #8b5cf6)" 
+                            radius={[0, 4, 4, 0]} 
+                            barSize={20}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                    <p className="text-xs text-gray-400 font-medium italic">No specific medicines mapped for this season.</p>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#3b82f6' }}></span>
-                  <span className="text-sm">Soon</span>
-                </div>
-                <span className="text-sm font-semibold">{stockStatusCounts.expSoon}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#ef4444' }}></span>
-                  <span className="text-sm">Expired</span>
-                </div>
-                <span className="text-sm font-semibold">{stockStatusCounts.expired}</span>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -863,6 +901,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             </div>
             <div className="flex bg-gray-100 p-1 rounded-md">
               {[
+                { id: 'daily', label: 'Daily' },
                 { id: 'weekly', label: 'Weekly' },
                 { id: 'month', label: 'Monthly' },
                 { id: 'yearly', label: 'Yearly' }
@@ -1874,6 +1913,59 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       {/* Category Overview removed */}
 
       
+      {/* Inventory Value Breakdown Modal */}
+      {showValueBreakdown && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[70] backdrop-blur-sm" onClick={() => setShowValueBreakdown(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b bg-gray-50/50 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">Inventory Breakdown</h2>
+              <button onClick={() => setShowValueBreakdown(false)} className="p-1 hover:bg-gray-200 rounded-full transition-colors">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Normal Stock</span>
+                  <span className="text-sm font-bold text-gray-900">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(inventoryBreakdown.normal)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Low Stock</span>
+                  <span className="text-sm font-bold text-amber-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(inventoryBreakdown.low)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-600">Expiring Soon</span>
+                  <span className="text-sm font-bold text-blue-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(inventoryBreakdown.expiring)}</span>
+                </div>
+                <div className="flex justify-between items-center border-b pb-3">
+                  <span className="text-sm font-medium text-gray-600">Expired</span>
+                  <span className="text-sm font-bold text-red-600">{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(inventoryBreakdown.expired)}</span>
+                </div>
+              </div>
+              <div className="pt-2">
+                <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg border border-gray-200 mb-2">
+                  <span className="text-sm font-bold text-gray-700 uppercase tracking-wider">Total Value</span>
+                  <span className="text-lg font-black text-gray-900">
+                    {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+                      inventoryBreakdown.normal + inventoryBreakdown.low + inventoryBreakdown.expiring + inventoryBreakdown.expired
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center bg-rose-50 p-3 rounded-lg border border-rose-100">
+                  <div>
+                    <p className="text-xs font-bold text-rose-800 uppercase tracking-wider">At-Risk Value</p>
+                    <p className="text-[10px] text-rose-600 italic">(expiring + expired)</p>
+                  </div>
+                  <p className="text-lg font-black text-rose-700">
+                    {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(inventoryBreakdown.atRisk)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Form Modal */}
       {showForm && (
         <MedicineForm

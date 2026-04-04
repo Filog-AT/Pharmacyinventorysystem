@@ -174,13 +174,23 @@ export function Inventory({
   const handleSubmitMedicine = async (data) => {
     setSubmitting(true);
     try {
+      let result;
       if (editingMedicine && editingMedicine.id) {
-        await onUpdateMedicine?.(editingMedicine.id, data);
+        result = await onUpdateMedicine?.(editingMedicine.id, data);
       } else {
-        await onAddMedicine?.(data);
+        result = await onAddMedicine?.(data);
       }
       setShowMedicineForm(false);
       setEditingMedicine(undefined);
+
+      // Automatically trigger "Add Stock" after adding/updating a variation
+      if (result?.id) {
+        setPreselectedMedicineId(result.id);
+        setShowAddStockForm(true);
+      } else if (editingMedicine?.id) {
+        setPreselectedMedicineId(editingMedicine.id);
+        setShowAddStockForm(true);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -295,16 +305,18 @@ export function Inventory({
               className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background"
             />
           </div>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
-          >
-            <option value="All">All Categories</option>
-            {safeCategories.map(cat => (
-              <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
-            ))}
-          </select>
+          {!isStaff && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-input-background min-w-[150px]"
+            >
+              <option value="All">All Categories</option>
+              {safeCategories.map(cat => (
+                <option key={cat.id || cat.name} value={cat.name}>{cat.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -628,6 +640,7 @@ export function Inventory({
         <MedicineForm
           medicine={editingMedicine}
           categories={categories}
+          medicines={medicines}
           existingMedicines={safeMedicines}
           onSubmit={handleSubmitMedicine}
           onClose={() => setShowMedicineForm(false)}

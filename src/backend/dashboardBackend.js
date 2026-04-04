@@ -38,7 +38,22 @@ export const getStats = (medicines) => {
     return false;
   }).length;
 
-  const totalValue = medicines.reduce((sum, m) => sum + ((m.totalQuantity || 0) * (m.price || 0)), 0);
+  const totalValue = medicines.reduce((sum, m) => {
+    const minStock = Number(m.minStockLevel || 50);
+    const totalQty = Number(m.totalQuantity || 0);
+    const pricePerBox = Number(m.price || 0);
+    const unitsPerBox = (Number(m.defaultBlistersPerBox) || 1) * (Number(m.defaultUnitsPerBlister) || 1);
+    const pricePerUnit = pricePerBox / unitsPerBox;
+
+    let medValue = 0;
+    (m.batches || []).forEach(b => {
+      const qty = Number(b.quantity || 0);
+      if (qty > 0) {
+        medValue += qty * pricePerUnit;
+      }
+    });
+    return sum + medValue;
+  }, 0);
 
   return { totalMedicines, lowStock, expiringSoon, expired, totalValue };
 };
@@ -110,12 +125,38 @@ export const getSalesAggregates = (receipts) => {
     }
     yearlyTotals.set(ts.getFullYear(), (yearlyTotals.get(ts.getFullYear()) || 0) + amount);
   });
+
+  const dailyData = [];
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(sevenDaysAgo);
+    d.setDate(sevenDaysAgo.getDate() + i);
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    const dateStr = d.toDateString();
+    
+    let dailyTotal = 0;
+    let dailyTransactions = 0;
+    
+    (receipts || []).forEach(r => {
+      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
+      if (ts.toDateString() === dateStr) {
+        dailyTotal += Number(r.grandTotal || r.total || r.subtotal || 0);
+        dailyTransactions += 1;
+      }
+    });
+    
+    dailyData.push({ label, total: dailyTotal, transactions: dailyTransactions });
+  }
+
   const yearlyData = Array.from(yearlyTotals.entries()).map(([year, total]) => ({ year, total }));
   const monthlyData = monthKeys.map(({ key, date }) => ({
     month: date.getMonth() + 1,
     total: monthTotals.get(key) || 0
   }));
-  return { todayTotal, monthlyData, yearlyData };
+  return { todayTotal, monthlyData, yearlyData, dailyData };
 };
 
 export const getLowStockMeds = (medicines) => {
@@ -505,5 +546,58 @@ export const calculateMedicineForecast = (records, med, startPrevMonth, endPrevM
   const reorderAlert = dailyUsage > 0 ? currentStock <= reorderPoint : false;
 
   return { series, forecastData: { dailyUsage, predicted30, daysRemaining, stockoutDate, reorderPoint, reorderAlert } };
+};
+
+export const getInventoryValueBreakdown = (medicines, statusModalWindow = 90) => {
+  const today = new Date();
+  let normalValue = 0;
+  let lowStockValue = 0;
+  let expiringSoonValue = 0;
+  let expiredValue = 0;
+
+  (medicines || []).forEach(m => {
+    const pricePerBox = Number(m.price || 0);
+    const minStock = Number(m.minStockLevel || 50);
+    const totalQty = Number(m.totalQuantity || 0);
+    const unitsPerBox = (Number(m.defaultBlistersPerBox) || 1) * (Number(m.defaultUnitsPerBlister) || 1);
+    const pricePerUnit = pricePerBox / unitsPerBox;
+    const isMedicineLowStock = totalQty > 0 && totalQty <= minStock;
+
+    (m.batches || []).forEach(b => {
+      const qty = Number(b.quantity || 0);
+      if (qty <= 0) return;
+
+      const val = qty * pricePerUnit;
+      const expDate = b.expiryDate ? new Date(b.expiryDate) : null;
+
+      if (!expDate || isNaN(expDate.getTime())) {
+        if (isMedicineLowStock) lowStockValue += val;
+        else normalValue += val;
+        return;
+      }
+
+      const daysUntilExpiry = Math.ceil((expDate.getTime() - today.getTime()) / 86400000);
+
+      if (expDate < today) {
+        expiredValue += val;
+      } else if (daysUntilExpiry > 0 && daysUntilExpiry <= statusModalWindow) {
+        expiringSoonValue += val;
+      } else if (isMedicineLowStock) {
+        lowStockValue += val;
+      } else {
+        normalValue += val;
+      }
+    });
+  });
+
+  const atRiskValue = expiringSoonValue + expiredValue;
+
+  return {
+    normal: normalValue,
+    low: lowStockValue,
+    expiring: expiringSoonValue,
+    expired: expiredValue,
+    atRisk: atRiskValue
+  };
 };
 

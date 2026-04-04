@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { TrendingUp, Lightbulb } from 'lucide-react';
+import { TrendingUp, Lightbulb, Activity } from 'lucide-react';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/app/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, Tooltip as RTooltip } from 'recharts';
 import { PrescriptiveRecommendations } from '@/app/components/PrescriptiveRecommendations';
@@ -289,15 +289,22 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
       </div>
 
       {/* Usage & Sales Summary */}
-      <section className="space-y-4">
+      <section className="space-y-6">
         <h2 className="text-xl font-semibold">Usage & Sales Summary</h2>
+        
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Medicine Sales Trend (Last 30 days) */}
-          <div className="bg-white rounded-lg border p-4 flex flex-col min-h-[600px] h-auto shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex flex-col">
-                <h3 className="font-bold text-lg text-gray-900">Medicine Sales</h3>
-                <div className="flex bg-gray-100 p-0.5 rounded-md mt-2 w-fit">
+          {/* Medicine Sales (Styled like Staff Dashboard Sales Performance) */}
+          <div className="bg-white p-6 rounded-xl border shadow-sm lg:col-span-2">
+            <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+              <div>
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  Sales Performance
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">Historical sales volume for selected medicine</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex bg-gray-100 p-1 rounded-lg w-fit">
                   {[
                     { id: 'day', label: 'Daily' },
                     { id: 'week', label: 'Weekly' },
@@ -307,7 +314,7 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
                     <button
                       key={ts.id}
                       onClick={() => setTimeScale(ts.id)}
-                      className={`px-3 py-1 text-[10px] rounded transition-all ${
+                      className={`px-3 py-1 text-[10px] rounded-md transition-all ${
                         timeScale === ts.id 
                           ? 'bg-white shadow-sm text-blue-600 font-bold' 
                           : 'text-gray-500 hover:text-gray-700'
@@ -317,155 +324,53 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
                     </button>
                   ))}
                 </div>
-              </div>
-              <select
-                value={selectedMedicineId}
-                onChange={(e) => setSelectedMedicineId(e.target.value)}
-                className="px-3 py-1.5 border rounded-md text-sm bg-white max-w-[200px]"
-              >
-                {medicines.map(m => (
-                  <option key={m.id} value={m.id}>{m.name} ({m.strength})</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex-1 min-h-[400px]">
-              {selectedSeries.length > 0 && selectedSeries.some(d => d.units > 0) ? (
-                <ChartContainer
-                  config={{ units: { label: 'Units sold', color: '#3B82F6' } }}
-                  className="h-full w-full"
+                <select
+                  value={selectedMedicineId}
+                  onChange={(e) => setSelectedMedicineId(e.target.value)}
+                  className="px-3 py-1.5 border rounded-md text-sm bg-white w-full max-w-[200px]"
                 >
-                  <ResponsiveContainer>
-                    <BarChart data={selectedSeries}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis dataKey="label" fontSize={10} tickLine={false} axisLine={false} />
-                      <YAxis fontSize={10} tickLine={false} axisLine={false} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <Bar dataKey="units" fill="var(--color-units, #3B82F6)" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
+                  {medicines.map(m => (
+                    <option key={m.id} value={m.id}>{m.name} ({m.strength})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="h-[280px]">
+              {selectedSeries.length > 0 && selectedSeries.some(d => d.units > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={selectedSeries}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8', fontSize:10}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill:'#94a3b8', fontSize:10}} />
+                    <RTooltip 
+                      cursor={{fill:'#f8fafc'}}
+                      content={({active, payload, label}) => {
+                        if (active && payload?.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white border p-3 rounded-lg shadow-xl">
+                              <p className="font-bold text-gray-900 border-b pb-1 mb-2">{label}</p>
+                              <div className="space-y-1">
+                                <p className="text-blue-600 font-bold text-lg">{data.units} Units</p>
+                                <p className="text-gray-500 text-xs font-semibold">Total Sold</p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="units" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
               ) : (
-                <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground gap-2">
-                  <TrendingUp className="w-8 h-8 opacity-20" />
-                  <p className="text-sm italic text-center">No sales recorded for this medicine in the last 30 days.</p>
+                <div className="h-full flex items-center justify-center text-gray-400 text-sm italic">
+                  No sales activity recorded.
                 </div>
               )}
             </div>
           </div>
 
-          {/* Demand Prediction */}
-          <div className="bg-white rounded-lg border p-6 flex flex-col min-h-[600px] h-auto shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-purple-600" />
-                <h3 className="font-bold text-lg text-gray-900">Demand Prediction</h3>
-              </div>
-              <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-full uppercase tracking-widest">
-                {seasonalDemand[0]?.currentMonthName} Analysis
-              </span>
-            </div>
-            <div className="flex-1 space-y-6">
-              {seasonalDemand.map((season, idx) => (
-                <div key={idx} className="pb-6 last:pb-0">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-black text-sm text-gray-800 uppercase tracking-tight flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
-                      {season.currentMonthName} ({season.months}) — {season.name}
-                    </h4>
-                  </div>
-                  <p className="text-xs text-gray-500 font-medium leading-relaxed mb-4 bg-purple-50 p-2.5 rounded-lg border border-purple-100/50">
-                    {season.reason}
-                  </p>
-
-                  <div className="flex items-center gap-1.5 mb-4 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                    <Lightbulb className="w-3 h-3 text-purple-400" />
-                    <span>Predicted Daily Sales & Chance based on seasonal patterns</span>
-                  </div>
-                  
-                   {season.medicines.length > 0 ? (
-                    <div className="h-auto w-full min-h-[160px]">
-                      <ChartContainer config={{ demand: { label: 'Predicted Daily Sales', color: '#8b5cf6' } }}>
-                        <ResponsiveContainer width="100%" height={season.medicines.length * 40 + 20}>
-                          <BarChart data={season.medicines} layout="vertical" margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                            <XAxis type="number" hide domain={[0, 'dataMax + 2']} />
-                            <YAxis 
-                              dataKey="name" 
-                              type="category"
-                              fontSize={11} 
-                              fontWeight={700}
-                              tick={{ fill: '#4b5563' }}
-                              tickLine={false} 
-                              axisLine={false} 
-                              width={120}
-                            />
-                            <ChartTooltip 
-                                content={({ active, payload }) => {
-                                  if (active && payload && payload.length) {
-                                    const data = payload[0].payload;
-                                    return (
-                                      <div className="bg-white p-3 border rounded-lg shadow-xl">
-                                        <p className="text-sm font-bold text-gray-900 mb-2 border-b pb-1">{data.name}</p>
-                                        <div className="space-y-2">
-                                          <div className="flex items-center justify-between gap-4">
-                                            <div className="flex items-center gap-2">
-                                              <TrendingUp className="w-3 h-3 text-purple-500" />
-                                              <span className="text-xs text-gray-600">Daily Sales</span>
-                                            </div>
-                                            <span className="text-xs font-bold text-purple-700">~{data.predictedDailySales} units/day</span>
-                                          </div>
-                                          <div className="flex items-center justify-between gap-4">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                                              <span className="text-xs text-gray-600">Sale Chance</span>
-                                            </div>
-                                            <span className="text-xs font-bold text-emerald-700">{data.saleChance}%</span>
-                                          </div>
-                                        </div>
-                                        <p className="text-[10px] text-gray-400 mt-2 leading-tight">
-                                          A higher score means this medicine is more likely to be sold in {season.currentMonthName} based on <strong>Seasonal Public Health Trends</strong>.
-                                        </p>
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                }}
-                              />
-                            <Bar 
-                              dataKey="predictedDailySales" 
-                              fill="var(--color-demand, #8b5cf6)" 
-                              radius={[0, 4, 4, 0]} 
-                              barSize={20}
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </ChartContainer>
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                      <p className="text-xs text-gray-400 font-medium italic">No specific medicines mapped for this season.</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            
-            {/* Added content at the bottom to make it sense to the user */}
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lightbulb className="w-4 h-4 text-blue-600" />
-                  <p className="text-xs font-black text-blue-800 uppercase tracking-wider">Inventory Strategy Advice</p>
-                </div>
-                <p className="text-[11px] text-blue-700 leading-relaxed font-medium">
-                  Increase stock levels for <span className="font-bold underline">Vitamins</span> and <span className="font-bold underline">Flu Medicines</span> at least 2 weeks before the predicted peak seasons. Monitor usage rates weekly to adjust reorder points dynamically.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg border-2 border-emerald-100 p-6 relative shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-6">
               <div className="flex flex-col">

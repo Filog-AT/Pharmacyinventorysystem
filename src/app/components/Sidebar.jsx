@@ -5,7 +5,7 @@ import { SidebarItem } from '@/app/components/SidebarItem';
 const allMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['manager', 'staff'] },
   { id: 'analytics', label: 'Analytics', icon: TrendingUp, roles: ['manager'] },
-  { id: 'inventory', label: 'Inventory', icon: FolderTree, roles: ['manager', 'staff'] },
+  { id: 'inventory', label: 'Inventory', icon: FolderTree, roles: ['manager'] },
   { id: 'receipts', label: 'Sales', icon: ShoppingCart, roles: ['staff'] },
   { id: 'activity', label: 'Activity Logs', icon: FileText, roles: ['manager'] },
   { id: 'orders', label: 'Orders & Suppliers', icon: FileText, roles: [] },

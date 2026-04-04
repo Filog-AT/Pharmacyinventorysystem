@@ -8,6 +8,7 @@ let receiptServiceModule = null;
 export function StaffDashboard({ medicines = [], currentUser }) {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [timeScale, setTimeScale] = useState('daily'); // daily|weekly|monthly
 
   const loadReceiptService = async () => {
     if (receiptServiceModule) return receiptServiceModule;
@@ -26,6 +27,7 @@ export function StaffDashboard({ medicines = [], currentUser }) {
     try {
       const svc = await loadReceiptService();
       if (svc) {
+        // Fetch receipts without limit (0) to ensure we get all data for today's stats
         const data = await svc.getRecentReceipts(currentUser.pharmacyId, 0);
         setReceipts(data || []);
       }
@@ -50,50 +52,16 @@ export function StaffDashboard({ medicines = [], currentUser }) {
   }, [currentUser?.pharmacyId]);
 
   const stats = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toDateString();
-    let sales = 0;
-    let units = 0;
-    let tx = 0;
-
-    receipts.forEach(r => {
-      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      if (ts.toDateString() === todayStr) {
-        sales += Number(r.grandTotal || 0);
-        tx += 1;
-        if (Array.isArray(r.items)) {
-          r.items.forEach(it => {
-            units += Number(it.quantity || 0);
-          });
-        }
-      }
-    });
-
-    return { sales, units, tx };
+    return staffDashboardBackend.calculateTodayStats(receipts);
   }, [receipts]);
 
-  const hourlyData = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toDateString();
-    const hours = Array.from({ length: 24 }, (_, i) => ({
-      hour: i,
-      label: `${i}:00`,
-      sales: 0,
-      transactions: 0
-    }));
-
-    receipts.forEach(r => {
-      const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-      if (ts.toDateString() === todayStr) {
-        const h = ts.getHours();
-        hours[h].sales += Number(r.grandTotal || 0);
-        hours[h].transactions += 1;
-      }
-    });
-
-    const currentH = now.getHours();
-    return hours.filter(h => h.sales > 0 || (h.hour >= 8 && h.hour <= Math.max(17, currentH)));
+  const hourlySales = useMemo(() => {
+    return staffDashboardBackend.getTodayHourlySales(receipts);
   }, [receipts]);
+
+  const performanceData = useMemo(() => {
+    return staffDashboardBackend.getSalesPerformance(receipts, timeScale);
+  }, [receipts, timeScale]);
 
   const expiringSoon = useMemo(() => {
     const today = new Date();
@@ -144,7 +112,7 @@ export function StaffDashboard({ medicines = [], currentUser }) {
           </div>
           <div>
             <p className="text-sm text-gray-500 font-medium">Today's Sales</p>
-            <p className="text-2xl font-bold text-gray-900">{formatPHP(stats.sales)}</p>
+            <p className="text-2xl font-bold text-gray-900">{formatPHP(stats.todaySales)}</p>
           </div>
         </div>
         <div className="bg-white p-6 rounded-xl border shadow-sm flex items-center gap-4">
@@ -153,7 +121,7 @@ export function StaffDashboard({ medicines = [], currentUser }) {
           </div>
           <div>
             <p className="text-sm text-gray-500 font-medium">Units Sold</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.units}</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.todayUnitsSold}</p>
           </div>
         </div>
         <div className="bg-white p-6 rounded-xl border shadow-sm flex items-center gap-4">
@@ -162,7 +130,7 @@ export function StaffDashboard({ medicines = [], currentUser }) {
           </div>
           <div>
             <p className="text-sm text-gray-500 font-medium">Transactions</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.tx}</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.todayTransactions}</p>
           </div>
         </div>
       </div>
@@ -170,23 +138,47 @@ export function StaffDashboard({ medicines = [], currentUser }) {
       {/* Chart Section */}
       <div className="bg-white p-6 rounded-xl border shadow-sm">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <Activity className="w-5 h-5 text-blue-600" />
-            Hourly Sales Performance
-          </h2>
-          <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
-            <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-            Sales Volume (PHP)
+          <div>
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <Activity className="w-5 h-5 text-blue-600" />
+              Today's Sales Hourly
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">Real-time sales distribution for today</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+              {[
+                { id: 'daily', label: 'Daily' },
+                { id: 'weekly', label: 'Weekly' },
+                { id: 'monthly', label: 'Monthly' }
+              ].map((ts) => (
+                <button
+                  key={ts.id}
+                  onClick={() => setTimeScale(ts.id)}
+                  className={`px-3 py-1 text-[10px] rounded-md transition-all ${
+                    timeScale === ts.id 
+                      ? 'bg-white shadow-sm text-blue-600 font-bold' 
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {ts.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+              <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
+              Sales Volume (PHP)
+            </div>
           </div>
         </div>
         <div className="h-[300px]">
-          {hourlyData.length === 0 ? (
+          {hourlySales.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400 text-sm italic">
-              No sales activity recorded for today.
+              No sales activity recorded for today yet.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlyData}>
+              <BarChart data={hourlySales}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8', fontSize:11}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill:'#94a3b8', fontSize:11}} tickFormatter={(v)=>`₱${v}`} />

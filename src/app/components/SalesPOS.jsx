@@ -129,7 +129,10 @@ export function SalesPOS({ medicines, currentUser }) {
   }, [amountReceived, grandTotal]);
 
   const hasPrescriptionMed = useMemo(() => {
-    return cart.some(item => item.medicine.tag === 'Prescription');
+    return cart.some(item => {
+      const tag = String(item.medicine.tag || '').toLowerCase();
+      return tag.includes('prescription') && !tag.includes('non');
+    });
   }, [cart]);
 
   const handleCheckout = async (shouldPrint = false) => {
@@ -437,8 +440,9 @@ export function SalesPOS({ medicines, currentUser }) {
             {filteredMedicines.map(medicine => {
               const stock = medicine.totalQuantity || 0;
               const isLowStock = stock < 50;
-              const isPrescription = medicine.tag === 'Prescription';
-              const isVitamin = medicine.tag === 'Vitamins';
+              const isPrescription = String(medicine.tag || '').toLowerCase().includes('prescription') && !String(medicine.tag || '').toLowerCase().includes('non');
+              const isNonPrescription = String(medicine.tag || '').toLowerCase().includes('non-prescription');
+              const isVitamin = String(medicine.tag || '').toLowerCase().includes('vitamin');
               
               return (
                 <button
@@ -446,7 +450,7 @@ export function SalesPOS({ medicines, currentUser }) {
                   onClick={() => addToCart(medicine)}
                   className={`rounded-lg border p-4 hover:shadow-md transition-all text-left relative overflow-hidden group border-transparent ${
                     stock === 0 ? 'bg-gray-100 opacity-60' :
-                    isLowStock ? 'bg-red-50 hover:border-red-400' : 'bg-green-50 hover:border-green-400'
+                    isLowStock ? 'bg-red-50 hover:border-red-400 border-red-100' : 'bg-green-50 hover:border-green-400 border-green-100'
                   }`}
                   disabled={stock === 0}
                 >
@@ -460,7 +464,7 @@ export function SalesPOS({ medicines, currentUser }) {
                       isVitamin ? 'bg-blue-200 text-blue-800' :
                       'bg-green-200 text-green-800'
                     }`}>
-                      {medicine.tag || 'non-Prescription'}
+                      {medicine.tag || (isPrescription ? 'Prescription' : 'Non-Prescription')}
                     </span>
                   </div>
                   <p className={`text-xs mb-1 ${stock === 0 ? 'text-gray-400' : isLowStock ? 'text-red-700' : 'text-green-700'}`}>
