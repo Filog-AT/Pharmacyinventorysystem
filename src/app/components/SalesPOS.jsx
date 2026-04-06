@@ -30,9 +30,12 @@ export function SalesPOS({ medicines, currentUser }) {
   }, [currentUser?.pharmacyId]);
 
   const filteredMedicines = useMemo(() => {
-    return medicines.filter(m =>
-      (m.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-    ).sort((a, b) => {
+    return medicines.filter(m => {
+      const search = searchTerm.toLowerCase();
+      const name = (m.name || '').toLowerCase();
+      const brand = (m.brandName || '').toLowerCase();
+      return name.includes(search) || brand.includes(search);
+    }).sort((a, b) => {
       const da = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
       const db = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
       return da - db;
@@ -455,11 +458,16 @@ export function SalesPOS({ medicines, currentUser }) {
                   disabled={stock === 0}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <h3 className={`font-bold text-sm truncate pr-2 flex-1 ${
-                      stock === 0 ? 'text-gray-500' :
-                      isLowStock ? 'text-red-900' : 'text-green-900'
-                    }`}>{medicine.name || 'Unknown'}</h3>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight ${
+                    <div className="flex-1 truncate pr-2">
+                      <h3 className={`font-bold text-sm truncate ${
+                        stock === 0 ? 'text-gray-500' :
+                        isLowStock ? 'text-red-900' : 'text-green-900'
+                      }`}>{medicine.brandName || 'Unknown Brand'}</h3>
+                      <p className={`text-[10px] truncate ${stock === 0 ? 'text-gray-400' : isLowStock ? 'text-red-700' : 'text-green-700'}`}>
+                        {medicine.name || 'Generic Name'}
+                      </p>
+                    </div>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight shrink-0 ${
                       isPrescription ? 'bg-red-200 text-red-800' : 
                       isVitamin ? 'bg-blue-200 text-blue-800' :
                       'bg-green-200 text-green-800'
@@ -467,11 +475,8 @@ export function SalesPOS({ medicines, currentUser }) {
                       {medicine.tag || (isPrescription ? 'Prescription' : 'Non-Prescription')}
                     </span>
                   </div>
-                  <p className={`text-xs mb-1 ${stock === 0 ? 'text-gray-400' : isLowStock ? 'text-red-700' : 'text-green-700'}`}>
-                    {medicine.category || 'N/A'}
-                  </p>
                   <p className={`text-[10px] mb-2 ${stock === 0 ? 'text-gray-400' : isLowStock ? 'text-red-600' : 'text-green-600'}`}>
-                    {medicine.strength} - {medicine.dosageForm}
+                    {medicine.category} • {medicine.strength} - {medicine.dosageForm}
                   </p>
                   <div className="flex justify-between items-center mt-auto">
                     <span className={`font-bold ${stock === 0 ? 'text-gray-400' : isLowStock ? 'text-red-800' : 'text-green-800'}`}>
@@ -539,9 +544,10 @@ export function SalesPOS({ medicines, currentUser }) {
                 cart.map(item => (
                   <div key={`${item.medicine.id}-${item.sellUnit}`} className="border-b pb-3">
                     <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{item.medicine.name || 'Unknown'}</p>
-                        <div className="flex items-center gap-2">
+                      <div className="flex-1 truncate pr-2">
+                        <p className="font-bold text-sm truncate">{item.medicine.brandName || 'Unknown Brand'}</p>
+                        <p className="text-[10px] text-gray-500 truncate">{item.medicine.name || 'Generic Name'}</p>
+                        <div className="flex items-center gap-2 mt-1">
                           <select
                             value={item.sellUnit}
                             onChange={(e) => {

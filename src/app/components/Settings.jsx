@@ -305,6 +305,10 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
             strength
           );
 
+          // Randomize default counts from 5 to 10
+          const defaultBlistersPerBox = Math.floor(Math.random() * 6) + 5; // 5-10
+          const defaultUnitsPerBlister = Math.floor(Math.random() * 6) + 5; // 5-10
+
           if (existingMed) {
             medId = existingMed.id;
           } else {
@@ -322,13 +326,35 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
                 price,
                 minStockLevel: 50,
                 batches: [],
-                totalQuantity: 0
+                totalQuantity: 0,
+                defaultBlistersPerBox,
+                defaultUnitsPerBlister
               }
             );
           }
 
           const expDate = new Date();
-          expDate.setMonth(expDate.getMonth() + 12 + Math.floor(Math.random() * 12));
+          const randStatus = Math.random();
+          let boxesReceived = 10;
+          
+          if (randStatus < 0.25) {
+            // Out of stock (expired or very low)
+            expDate.setMonth(expDate.getMonth() - (Math.floor(Math.random() * 6) + 1));
+            boxesReceived = 0;
+          } else if (randStatus < 0.5) {
+            // Low stock
+            expDate.setMonth(expDate.getMonth() + 12);
+            boxesReceived = 2; // Low number of boxes
+          } else if (randStatus < 0.75) {
+            // Normal stock
+            expDate.setMonth(expDate.getMonth() + 24);
+            boxesReceived = 50;
+          } else {
+            // Expired stock
+            expDate.setMonth(expDate.getMonth() - 12);
+            boxesReceived = 20;
+          }
+
           await medicineService.addBatch(
             currentUser.pharmacyId,
             categoryObj.id,
@@ -336,9 +362,9 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
             {
               batchNumber: `DEMO-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
               expiryDate: expDate.toISOString().split('T')[0],
-              boxesReceived: 10,
-              blistersPerBox: 10,
-              unitsPerBlister: 10,
+              boxesReceived,
+              blistersPerBox: defaultBlistersPerBox,
+              unitsPerBlister: defaultUnitsPerBlister,
               purchasePrice: Math.round((price * 0.7) * 100) / 100,
               supplier: 'Demo Supplier'
             }

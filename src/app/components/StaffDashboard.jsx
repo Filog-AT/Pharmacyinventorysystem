@@ -8,7 +8,7 @@ let receiptServiceModule = null;
 export function StaffDashboard({ medicines = [], currentUser }) {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [timeScale, setTimeScale] = useState('daily'); // daily|weekly|monthly
+  const [timeScale, setTimeScale] = useState('monthly'); // forced to monthly as per removal of daily/weekly
 
   const loadReceiptService = async () => {
     if (receiptServiceModule) return receiptServiceModule;
@@ -141,15 +141,13 @@ export function StaffDashboard({ medicines = [], currentUser }) {
           <div>
             <h2 className="text-lg font-bold flex items-center gap-2">
               <Activity className="w-5 h-5 text-blue-600" />
-              Today's Sales Hourly
+              Sales Performance
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Real-time sales distribution for today</p>
+            <p className="text-xs text-gray-500 mt-0.5">Historical monthly sales distribution</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex bg-gray-100 p-1 rounded-lg">
               {[
-                { id: 'daily', label: 'Daily' },
-                { id: 'weekly', label: 'Weekly' },
                 { id: 'monthly', label: 'Monthly' }
               ].map((ts) => (
                 <button
@@ -172,13 +170,13 @@ export function StaffDashboard({ medicines = [], currentUser }) {
           </div>
         </div>
         <div className="h-[300px]">
-          {hourlySales.length === 0 ? (
+          {performanceData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400 text-sm italic">
-              No sales activity recorded for today yet.
+              No sales activity recorded for this period.
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlySales}>
+              <BarChart data={performanceData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8', fontSize:11}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill:'#94a3b8', fontSize:11}} tickFormatter={(v)=>`₱${v}`} />
