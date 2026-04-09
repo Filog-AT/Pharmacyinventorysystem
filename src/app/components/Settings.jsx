@@ -25,17 +25,40 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
   const [staffEmail, setStaffEmail] = useState('');
   const [staffPassword, setStaffPassword] = useState('');
   const [creatingStaff, setCreatingStaff] = useState(false);
+  const [staffList, setStaffList] = useState([]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
 
   // Demo Receipts State
   const [demoMonths, setDemoMonths] = useState('3');
   const [demoSalesCount, setDemoSalesCount] = useState('50');
+  const [showDevTools, setShowDevTools] = useState(false);
 
   useEffect(() => {
     setLocalPharmacyName(settings?.pharmacyName || '');
     setLocalAddress(settings?.address || '');
     setLocalContact(settings?.contact || '');
     setLogoPreview(settings?.logo || null);
-  }, [settings]);
+    
+    if (currentUser?.pharmacyId && currentUser?.role === 'manager') {
+      fetchStaff();
+    }
+  }, [settings, currentUser]);
+
+  const fetchStaff = async () => {
+    if (!currentUser?.pharmacyId) return;
+    setLoadingStaff(true);
+    try {
+      const staff = await userService.getStaffMembers(currentUser.pharmacyId);
+      // Filter out the current user (manager) from the staff list if desired, 
+      // or keep them if they should be visible. Usually, staff management shows OTHERS.
+      setStaffList(staff.filter(u => u.uid !== currentUser.uid));
+    } catch (error) {
+      console.error('Error fetching staff:', error);
+      toast.error('Failed to load staff members');
+    } finally {
+      setLoadingStaff(false);
+    }
+  };
 
   const handleUpdatePharmacy = async () => {
     try {
@@ -80,11 +103,25 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
       setStaffUsername('');
       setStaffEmail('');
       setStaffPassword('');
+      fetchStaff(); // Refresh the list
     } catch (error) {
       console.error('Error creating staff:', error);
       toast.error(error.message || 'Failed to create staff account');
     } finally {
       setCreatingStaff(false);
+    }
+  };
+
+  const handleDeleteStaff = async (uid, name) => {
+    if (!window.confirm(`Are you sure you want to remove ${name} from your staff? This will only delete their Firestore profile.`)) return;
+    
+    try {
+      await userService.deleteStaffMember(uid);
+      toast.success(`Staff member ${name} removed`);
+      fetchStaff(); // Refresh the list
+    } catch (error) {
+      console.error('Error deleting staff:', error);
+      toast.error('Failed to remove staff member');
     }
   };
 
@@ -617,6 +654,16 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
                 Send Reset Link
               </button>
             </div>
+
+            <div className="pt-4 border-t border-gray-100 mt-4">
+              <button 
+                onClick={() => setShowDevTools(!showDevTools)}
+                className="text-[10px] font-bold text-gray-400 hover:text-blue-500 transition-colors uppercase tracking-widest flex items-center gap-2"
+              >
+                <Database className="w-3 h-3" />
+                {showDevTools ? 'Hide' : 'Show'} Developer & Demo Tools
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -631,41 +678,113 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
               </div>
               <div>
                 <h2 className="text-lg font-bold">Staff Management</h2>
-                <p className="text-xs text-muted-foreground">Create accounts for your pharmacy team</p>
+                <p className="text-xs text-muted-foreground">Manage accounts for your pharmacy team</p>
+              </div>
+            </div>
+            <button
+              onClick={fetchStaff}
+              disabled={loadingStaff}
+              className="p-2 text-gray-400 hover:text-emerald-600 transition-colors"
+              title="Refresh staff list"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingStaff ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Create Staff Form */}
+            <div className="lg:col-span-1 bg-gray-50/50 p-6 rounded-xl border border-gray-100 space-y-6">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <Plus className="w-4 h-4 text-emerald-600" />
+                Add New Staff
+              </h3>
+              <form onSubmit={handleCreateStaff} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">Full Name</label>
+                  <input type="text" value={staffName} onChange={(e) => setStaffName(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" placeholder="Juan Dela Cruz" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">Username</label>
+                  <input type="text" value={staffUsername} onChange={(e) => setStaffUsername(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" placeholder="juan_staff" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">Email Address</label>
+                  <input type="email" value={staffEmail} onChange={(e) => setStaffEmail(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" placeholder="juan@email.com" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase">Initial Password</label>
+                  <input type="password" value={staffPassword} onChange={(e) => setStaffPassword(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-sm bg-white" placeholder="Min. 6 characters" />
+                </div>
+                <button type="submit" disabled={creatingStaff} className="w-full bg-emerald-600 text-white px-4 py-2.5 rounded-lg hover:bg-emerald-700 transition-all font-bold text-sm shadow-md disabled:bg-gray-300 flex items-center justify-center gap-2">
+                  {creatingStaff ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {creatingStaff ? 'Creating...' : 'Create Account'}
+                </button>
+              </form>
+            </div>
+
+            {/* Staff List */}
+            <div className="lg:col-span-2 space-y-4">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-600" />
+                Registered Staff ({staffList.length})
+              </h3>
+              
+              <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-4 py-3 font-bold text-muted-foreground uppercase text-[10px]">Staff Name</th>
+                      <th className="px-4 py-3 font-bold text-muted-foreground uppercase text-[10px]">Username</th>
+                      <th className="px-4 py-3 font-bold text-muted-foreground uppercase text-[10px]">Email</th>
+                      <th className="px-4 py-3 font-bold text-muted-foreground uppercase text-[10px] text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {loadingStaff ? (
+                      <tr>
+                        <td colSpan="4" className="px-4 py-10 text-center text-muted-foreground">
+                          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 opacity-20" />
+                          Loading staff members...
+                        </td>
+                      </tr>
+                    ) : staffList.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="px-4 py-10 text-center text-muted-foreground">
+                          No staff accounts found. Create one to get started.
+                        </td>
+                      </tr>
+                    ) : (
+                      staffList.map((staff) => (
+                        <tr key={staff.uid} className="hover:bg-gray-50/50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="font-bold">{staff.name}</div>
+                            <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">{staff.role}</div>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-600">@{staff.username}</td>
+                          <td className="px-4 py-3 text-gray-500">{staff.email}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button 
+                              onClick={() => handleDeleteStaff(staff.uid, staff.name)}
+                              className="p-2 text-gray-400 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50"
+                              title="Delete staff member"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
-
-          <form onSubmit={handleCreateStaff} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-muted-foreground uppercase">Full Name</label>
-              <input type="text" value={staffName} onChange={(e) => setStaffName(e.target.value)} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50/30" placeholder="e.g. Juan Dela Cruz" />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-muted-foreground uppercase">Username</label>
-              <input type="text" value={staffUsername} onChange={(e) => setStaffUsername(e.target.value)} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50/30" placeholder="e.g. juan_staff" />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-muted-foreground uppercase">Email Address</label>
-              <input type="email" value={staffEmail} onChange={(e) => setStaffEmail(e.target.value)} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50/30" placeholder="e.g. juan@email.com" />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-muted-foreground uppercase">Initial Password</label>
-              <input type="password" value={staffPassword} onChange={(e) => setStaffPassword(e.target.value)} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50/30" placeholder="Min. 6 characters" />
-            </div>
-            <div className="md:col-span-4">
-              <button type="submit" disabled={creatingStaff} className="w-full md:w-auto bg-emerald-600 text-white px-10 py-3 rounded-xl hover:bg-emerald-700 transition-all font-black shadow-lg disabled:bg-gray-300 flex items-center justify-center gap-2">
-                {creatingStaff ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                {creatingStaff ? 'Creating Staff Account...' : 'Add New Staff Member'}
-              </button>
-            </div>
-          </form>
         </section>
       )}
 
       {/* 4. Demo Data Tools (Managers Only) */}
-      {currentUser?.role === 'manager' && (
-        <section className="bg-card rounded-xl border p-8 shadow-sm border-amber-200 bg-amber-50/5 space-y-8">
+      {currentUser?.role === 'manager' && showDevTools && (
+        <section className="bg-card rounded-xl border p-8 shadow-sm border-amber-200 bg-amber-50/5 space-y-8 animate-in slide-in-from-top-4 duration-300">
           <div className="flex items-center gap-3 border-b border-amber-200 pb-4">
             <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
               <Database className="w-5 h-5" />

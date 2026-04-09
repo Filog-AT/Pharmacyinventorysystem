@@ -13,13 +13,14 @@ export const getRecommendations = (medicines, today) => {
   };
 
   const addRecommendation = (m, data) => {
-    // Generate a unique ID based on name, strength, and dosage form to avoid duplicates
-    const uniqueId = `${m.name}|${m.strength}|${m.dosageForm}`.toLowerCase();
+    // Generate a unique ID based on brandName (or name), strength, and dosage form to avoid duplicates
+    const displayName = m.brandName || m.name;
+    const uniqueId = `${displayName}|${m.strength}|${m.dosageForm}`.toLowerCase();
     
     if (!medRecommendations.has(uniqueId)) {
       medRecommendations.set(uniqueId, {
         id: uniqueId,
-        product: `${m.name} ${m.strength} (${m.dosageForm})`,
+        product: `${displayName} ${m.strength} (${m.dosageForm})`,
         stock: `${m.totalQuantity || 0} ${m.unit || ''}`.trim(),
         status: 'Normal',
         priority: 'LOW',
@@ -141,11 +142,13 @@ export const getRecommendations = (medicines, today) => {
       
       const alternatives = medicines.filter(x => 
         x.id !== m.id && 
-        (x.category || '') === (m.category || '') && 
-        Number(x.totalQuantity || 0) > Math.max(1, Number(x.minStockLevel || 0)) * 2
+        (x.name || '').toLowerCase() === (m.name || '').toLowerCase() && 
+        (x.brandName || '').toLowerCase() !== (m.brandName || '').toLowerCase() &&
+        Number(x.totalQuantity || 0) > Math.max(1, Number(x.minStockLevel || 0))
       );
       if (alternatives.length > 0) {
-        addRecommendation(m, { action: `Suggest alternative: ${alternatives[0].name}` });
+        const altBrand = alternatives[0].brandName || alternatives[0].name;
+        addRecommendation(m, { action: `Suggest alternative: ${altBrand}` });
       }
     }
   }

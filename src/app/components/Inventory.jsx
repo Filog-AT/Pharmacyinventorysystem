@@ -221,15 +221,13 @@ export function Inventory({
   };
 
   const handleSubmitStock = async (medicineId, batchData) => {
-    setSubmitting(true);
+    // No setSubmitting(true) here because AddStockForm has its own loading screen
     try {
       await onAddBatch?.(medicineId, batchData);
       setShowAddStockForm(false);
       setPreselectedMedicineId(null);
     } catch (err) {
       console.error(err);
-    } finally {
-      setSubmitting(false);
     }
   }; const handleUpdateBatch = (medicineId, batchId, batchData) => {
     onUpdateBatch?.(medicineId, batchId, batchData);
@@ -241,13 +239,6 @@ export function Inventory({
 
   return (
     <div className="space-y-6 relative">
-      {/* Submitting Overlay */}
-      {submitting && (
-        <div className="fixed inset-0 bg-white/70 backdrop-blur-[1px] z-[100] flex flex-col items-center justify-center animate-in fade-in duration-200">
-          <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-          <p className="text-gray-900 font-bold">Processing...</p>
-        </div>
-      )}
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Inventory Management</h1>
@@ -597,7 +588,14 @@ export function Inventory({
 
       {showAddCategoryForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl relative overflow-hidden">
+            {/* Submitting Overlay */}
+            {submitting && (
+              <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-[60] flex flex-col items-center justify-center animate-in fade-in duration-200">
+                <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                <p className="text-gray-900 font-bold">Processing...</p>
+              </div>
+            )}
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Add New Category</h2>
               <button onClick={() => setShowAddCategoryForm(false)} className="p-1 hover:bg-gray-100 rounded-full transition-colors">

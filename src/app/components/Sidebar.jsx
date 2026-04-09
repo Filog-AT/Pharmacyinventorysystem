@@ -110,7 +110,7 @@ export function Sidebar({
           <div className={`p-6 border-b flex flex-col gap-4 ${sidebarColor ? 'border-white/10' : 'border-gray-100'}`}>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className={`text-xl font-bold ${contrastClass}`}>{pharmacyName || 'PharmaCare'}</h2>
+                <h2 className={`text-xl font-bold ${contrastClass}`}>{pharmacyName || 'PharmaTrack'}</h2>
                 <p className={`text-xs ${mutedContrastClass}`}>Inventory System</p>
               </div>
               <button

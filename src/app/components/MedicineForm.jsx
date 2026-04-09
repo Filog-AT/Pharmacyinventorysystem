@@ -200,6 +200,13 @@ export function MedicineForm({ medicine, categories, medicines = [], onSubmit, o
         className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto relative"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Submitting Overlay */}
+        {submitting && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-[60] flex flex-col items-center justify-center animate-in fade-in duration-200">
+            <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+            <p className="text-gray-900 font-bold">Processing...</p>
+          </div>
+        )}
         <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
           <h2 className="text-xl font-semibold">
             {medicine?.isVariation 

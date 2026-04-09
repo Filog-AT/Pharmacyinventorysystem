@@ -31,10 +31,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
   const topSoldData = topBottomData.top;
   const leastSoldData = topBottomData.least;
 
-  const seasonalDemand = useMemo(() => {
-    return analyticsBackend.getSeasonalDemand(medicines);
-  }, [medicines]);
-
   const CategoryTooltip = ({ active, payload }) => {
     if (!active || !payload || payload.length === 0) return null;
     const cat = payload[0]?.name || payload[0]?.payload?.name;
@@ -85,10 +81,8 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
       const svc = await loadReceiptService();
       try {
         if (svc) {
-          console.log(`[Analytics] Fetching receipts for pharmacy: ${currentUser.pharmacyId}`);
           // Pass 0 to remove limit and get all receipts for full historical analysis
           const data = await svc.getReceipts(currentUser.pharmacyId, 0);
-          console.log(`[Analytics] Fetched ${data?.length || 0} receipts`);
           setReceipts(data || []);
         }
       } catch (err) {
@@ -525,19 +519,22 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
               <BarChart
                 data={stockPerMedicine}
                 layout="vertical"
-                margin={{ left: 120, right: 20, top: 10, bottom: 10 }}
+                margin={{ left: 150, right: 20, top: 10, bottom: 10 }}
               >
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" hide />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={130}
-                  tick={{ fontSize: 13, fontWeight: 700, fill: '#1f2937' }}
-                  interval={0}
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  fontSize={11} 
+                  fontWeight={700}
+                  tick={{ fill: '#4b5563' }}
+                  tickLine={false} 
+                  axisLine={false} 
+                  width={140}
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="quantity" fill="#3B82F6" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fontWeight: 600 }} />
+                <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>

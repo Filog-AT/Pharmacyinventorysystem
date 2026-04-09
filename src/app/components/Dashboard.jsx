@@ -59,10 +59,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       const svc = await loadReceiptService();
       try {
         if (svc) {
-          console.log(`[Dashboard] Fetching receipts for pharmacy: ${currentUser.pharmacyId}`);
           // Pass 0 to remove limit and get all receipts for accurate historical trends
           const data = await svc.getReceipts(currentUser.pharmacyId, 0);
-          console.log(`[Dashboard] Fetched ${data?.length || 0} receipts`);
           setReceipts(data || []);
         }
       } catch (err) {
@@ -425,13 +423,6 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
   return (
     <div className="relative">
-      {/* Submitting Overlay */}
-      {submitting && (
-        <div className="fixed inset-0 bg-white/70 backdrop-blur-[1px] z-[100] flex flex-col items-center justify-center animate-in fade-in duration-200">
-          <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-          <p className="text-gray-900 font-bold">Processing...</p>
-        </div>
-      )}
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex-shrink-0">
@@ -621,7 +612,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             {filteredLowStockMeds.slice(0, 5).map(m => (
               <div key={m.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{m.name}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{m.displayName}</p>
                   <p className="text-[11px] text-gray-500 truncate">{m.strength} • {m.dosageForm}</p>
                 </div>
                 <span className="text-xs font-bold text-orange-600 ml-2">{m.totalQuantity} left</span>
@@ -650,7 +641,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             {filteredOutOfStockMeds.slice(0, 5).map(m => (
               <div key={m.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{m.name}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{m.displayName}</p>
                   <p className="text-[11px] text-gray-500 truncate">{m.strength} • {m.dosageForm}</p>
                 </div>
                 <span className="text-xs font-bold text-red-600 ml-2">OOS</span>
@@ -679,7 +670,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             {filteredExpiringSoonItems.slice(0, 5).map((it, idx) => (
               <div key={`${it.medId}-${it.batchNumber}-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{it.medName}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{it.displayName}</p>
                   <p className="text-[11px] text-gray-500 truncate">Batch {it.batchNumber} • {it.expiryDate}</p>
                 </div>
                 <span className="text-xs font-bold text-yellow-600 ml-2">{it.quantity} qty</span>
@@ -708,7 +699,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             {filteredExpiredItems.slice(0, 5).map((it, idx) => (
               <div key={`${it.medId}-${it.batchNumber}-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{it.medName}</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">{it.displayName}</p>
                   <p className="text-[11px] text-red-500 truncate">Batch {it.batchNumber} • Expired {it.expiryDate}</p>
                 </div>
                 <span className="text-xs font-bold text-rose-600 ml-2">{it.quantity} qty</span>
@@ -793,88 +784,81 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
       </div>
       )}
 
+      {/* Demand Prediction and Revenue Trend Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Demand Prediction (Relocated from Analytics) */}
-        <div className="bg-white rounded-lg border p-6 flex flex-col min-h-[520px] max-h-[520px] shadow-sm">
+        <div className="bg-white rounded-lg shadow-sm p-6 border flex flex-col h-full max-h-[600px]">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-purple-600" />
-              <h3 className="font-bold text-lg text-gray-900">Demand Prediction</h3>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Demand Prediction</h2>
+              <p className="text-[10px] text-gray-500">Predicted medicine demand based on current season</p>
             </div>
             <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-full uppercase tracking-widest">
               {seasonalDemand[0]?.currentMonthName} Analysis
             </span>
           </div>
-          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-6">
+          
+          <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
             {seasonalDemand.map((season, idx) => (
-              <div key={idx} className="pb-6 last:pb-0">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-black text-sm text-gray-800 uppercase tracking-tight flex items-center gap-2">
+              <div key={idx} className="space-y-4 mb-8 last:mb-0">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-black text-xs text-gray-800 uppercase tracking-tight flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
-                    {season.currentMonthName} ({season.months}) — {season.name}
+                    {season.name}
                   </h4>
                 </div>
-                <p className="text-xs text-gray-500 font-medium leading-relaxed mb-4 bg-purple-50 p-2.5 rounded-lg border border-purple-100/50">
+                <p className="text-[11px] text-gray-500 leading-relaxed bg-purple-50/50 p-2.5 rounded-lg border border-purple-100/30">
                   {season.reason}
                 </p>
 
-                <div className="flex items-center gap-1.5 mb-4 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                  <Lightbulb className="w-3 h-3 text-purple-400" />
-                  <span>Predicted Daily Sales & Chance based on seasonal patterns</span>
-                </div>
-                
-                 {season.medicines.length > 0 ? (
-                  <div className="h-auto w-full min-h-[160px]">
+                {season.medicines.length > 0 ? (
+                  <div className="h-auto w-full">
                     <ChartContainer config={{ demand: { label: 'Predicted Daily Sales', color: '#8b5cf6' } }}>
-                      <ResponsiveContainer width="100%" height={season.medicines.length * 40 + 20}>
+                      <ResponsiveContainer width="100%" height={Math.max(season.medicines.length * 35 + 20, 100)}>
                         <BarChart data={season.medicines} layout="vertical" margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                           <XAxis type="number" hide domain={[0, 'dataMax + 2']} />
                           <YAxis 
                             dataKey="name" 
                             type="category"
-                            fontSize={11} 
+                            fontSize={10} 
                             fontWeight={700}
                             tick={{ fill: '#4b5563' }}
                             tickLine={false} 
                             axisLine={false} 
-                            width={120}
+                            width={110}
                           />
-                          <ChartTooltip 
-                              content={({ active, payload }) => {
-                                if (active && payload && payload.length) {
-                                  const data = payload[0].payload;
-                                  return (
-                                    <div className="bg-white p-3 border rounded-lg shadow-xl">
-                                      <p className="text-sm font-bold text-gray-900 mb-2 border-b pb-1">{data.name}</p>
-                                      <div className="space-y-2">
-                                        <div className="flex items-center justify-between gap-4">
-                                          <div className="flex items-center gap-2">
-                                            <TrendingUp className="w-3 h-3 text-purple-500" />
-                                            <span className="text-xs text-gray-600">Daily Sales</span>
-                                          </div>
-                                          <span className="text-xs font-bold text-purple-700">~{data.predictedDailySales} units/day</span>
+                          <RTooltip 
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const data = payload[0].payload;
+                                return (
+                                  <div className="bg-white p-2.5 border rounded-lg shadow-xl text-[11px] animate-in fade-in zoom-in duration-200">
+                                    <p className="font-bold text-gray-900 mb-1.5 border-b pb-1">{data.name}</p>
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between gap-6">
+                                        <div className="flex items-center gap-1.5">
+                                          <TrendingUp className="w-3 h-3 text-purple-500" />
+                                          <span className="text-gray-600">Daily Demand</span>
                                         </div>
-                                        <div className="flex items-center justify-between gap-4">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                                            <span className="text-xs text-gray-600">Sale Chance</span>
-                                          </div>
-                                          <span className="text-xs font-bold text-emerald-700">{data.saleChance}%</span>
-                                        </div>
+                                        <span className="font-bold text-purple-700">~{data.predictedDailySales} units</span>
                                       </div>
-                                      <p className="text-[10px] text-gray-400 mt-2 leading-tight">
-                                        A higher score means this medicine is more likely to be sold in {season.currentMonthName} based on <strong>Seasonal Public Health Trends</strong>.
-                                      </p>
+                                      <div className="flex items-center justify-between gap-6">
+                                        <div className="flex items-center gap-1.5">
+                                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+                                          <span className="text-gray-600">Sale Chance</span>
+                                        </div>
+                                        <span className="font-bold text-emerald-700">{data.saleChance}%</span>
+                                      </div>
                                     </div>
-                                  );
-                                }
-                                return null;
-                              }}
-                            />
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
                           <Bar 
                             dataKey="predictedDailySales" 
-                            fill="var(--color-demand, #8b5cf6)" 
+                            fill="#8b5cf6" 
                             radius={[0, 4, 4, 0]} 
                             barSize={20}
                           />
@@ -883,8 +867,8 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                     </ChartContainer>
                   </div>
                 ) : (
-                  <div className="py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                    <p className="text-xs text-gray-400 font-medium italic">No specific medicines mapped for this season.</p>
+                  <div className="py-6 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                    <p className="text-[11px] text-gray-400 font-medium italic">No specific medicines mapped for this period.</p>
                   </div>
                 )}
               </div>
@@ -892,8 +876,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
         </div>
 
-        {/* Revenue Trend Section (Now Second) */}
-        <section className="bg-white rounded-lg border p-6 shadow-sm flex flex-col h-[520px]">
+        <section className="bg-white rounded-lg border p-6 shadow-sm flex flex-col h-full">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Revenue Trend</h2>
@@ -921,7 +904,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
             </div>
           </div>
           
-          <div className="flex-1 w-full pb-4">
+          <div className="flex-1 w-full pb-4 min-h-[300px]">
             <ChartContainer
               config={{ 
                 total: { label: 'Revenue', color: '#3b82f6' },
@@ -1064,7 +1047,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       <tbody>
                         {filteredLowStockMeds.map((m) => (
                           <tr key={m.id} className="border-t">
-                            <td className="p-2">{m.name} <span className="text-xs text-gray-500">({m.strength} • {m.dosageForm})</span></td>
+                            <td className="p-2">{m.displayName} <span className="text-xs text-gray-500">({m.strength} • {m.dosageForm})</span></td>
                             <td className="p-2 text-right">{m.totalQuantity || 0}</td>
                             <td className="p-2 text-right">{Math.max(50, Number(m.minStockLevel || 0))}</td>
                             <td className="p-2 text-right">
@@ -1096,7 +1079,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       <tbody>
                         {filteredExpiringSoonItems.map((it, idx) => (
                           <tr key={`${it.medId}-${it.batchNumber}-${idx}`} className="border-t">
-                            <td className="p-2">{it.medName}</td>
+                            <td className="p-2">{it.displayName}</td>
                             <td className="p-2">{it.batchNumber}</td>
                             <td className="p-2">{it.expiryDate}</td>
                             <td className="p-2 text-right">
@@ -1126,7 +1109,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       <tbody>
                         {filteredOutOfStockMeds.map((m) => (
                           <tr key={m.id} className="border-t">
-                            <td className="p-2">{m.name} <span className="text-xs text-gray-500">({m.strength} • {m.dosageForm})</span></td>
+                            <td className="p-2">{m.displayName} <span className="text-xs text-gray-500">({m.strength} • {m.dosageForm})</span></td>
                             <td className="p-2 text-right">
                               <button onClick={() => openAddStock(m.id)} className="px-2 py-1 border rounded-md text-sm hover:bg-red-50 text-red-700">
                                 Restock
@@ -1157,7 +1140,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       <tbody>
                         {filteredExpiredItems.map((it, idx) => (
                           <tr key={`${it.medId}-${it.batchNumber}-${idx}`} className="border-t">
-                            <td className="p-2">{it.medName}</td>
+                            <td className="p-2">{it.displayName}</td>
                             <td className="p-2">{it.batchNumber}</td>
                             <td className="p-2 text-right">{it.quantity}</td>
                             <td className="p-2 text-red-600 font-medium">{it.expiryDate}</td>
@@ -1188,7 +1171,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
                       {top10MedicinesByStock.map((m) => (
                         <tr key={m.id} className="border-t">
                           <td className="p-2">
-                            <div className="font-medium text-gray-900">{m.name}</div>
+                            <div className="font-medium text-gray-900">{m.brandName || m.name}</div>
                             <div className="text-xs text-gray-500">{m.strength} • {m.dosageForm}</div>
                           </td>
                           <td className="p-2 text-right font-bold text-gray-900">{m.totalQuantity || 0}</td>
@@ -1574,21 +1557,6 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
           </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Stock Levels by Category</h2>
-            <ChartContainer
-              config={{ quantity: { label: 'Quantity', color: '#3b82f6' } }}
-              className="aspect-[16/9]"
-            >
-              <BarChart data={categoryStockData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis fontSize={12} tickLine={false} axisLine={false} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="quantity" fill="var(--color-quantity, #3b82f6)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
-          </div>
           <div className="bg-white rounded-lg shadow-sm p-4">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Inventory by Category</h2>
             <ChartContainer

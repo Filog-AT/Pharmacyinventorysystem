@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Lock, Building2, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle } from 'lucide-react';
+import { User, Lock, Building2, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle, Lightbulb } from 'lucide-react';
 import { userService } from '@/services/userService';
 import { toast } from 'sonner';
 
@@ -14,6 +14,8 @@ export function Login({ onLogin, pharmacyName }) {
   const [pharmacyIdInput, setPharmacyIdInput] = useState(''); // For staff signing up
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [verificationStep, setVerificationStep] = useState(false); // New state for verification code step
+  const [verificationCode, setVerificationCode] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,26 +23,37 @@ export function Login({ onLogin, pharmacyName }) {
 
     try {
       if (isSignUp) {
-        if (role === 'staff') {
-          const exists = await userService.checkPharmacyExists(pharmacyIdInput);
-          if (!exists) {
-            toast.error('Invalid Pharmacy ID. Please check with your manager.');
-            setLoading(false);
-            return;
+        if (!verificationStep) {
+          // STEP 1: Details Submission -> Send Code
+          if (role === 'staff') {
+            const exists = await userService.checkPharmacyExists(pharmacyIdInput);
+            if (!exists) {
+              toast.error('Invalid Pharmacy ID. Please check with your manager.');
+              setLoading(false);
+              return;
+            }
           }
-        }
 
-        const profile = await userService.createAccount(
-          name, 
-          username,
-          email, 
-          password, 
-          role, 
-          role === 'staff' ? pharmacyIdInput : undefined,
-          role === 'manager' ? pharmacyNameInput : undefined
-        );
-        toast.success('Account created successfully!');
-        onLogin(profile);
+          await userService.sendVerificationCode(email);
+          setVerificationStep(true);
+          toast.success('Verification code sent! Please check your email.');
+        } else {
+          // STEP 2: Verify Code -> Create Account
+          await userService.verifyCode(email, verificationCode);
+          
+          const profile = await userService.createAccount(
+            name, 
+            username,
+            email, 
+            password, 
+            role, 
+            role === 'staff' ? pharmacyIdInput : undefined,
+            role === 'manager' ? pharmacyNameInput : undefined
+          );
+          
+          toast.success('Account created successfully!');
+          onLogin(profile);
+        }
       } else {
         const profile = await userService.signIn(username, password);
         toast.success(`Welcome back, ${profile.name}!`);
@@ -49,11 +62,103 @@ export function Login({ onLogin, pharmacyName }) {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
       console.error('[Login] Error:', errorMessage);
-      toast.error(errorMessage);
+      
+      // Use a more descriptive toast or alert
+      if (errorMessage.toLowerCase().includes('password') || errorMessage.toLowerCase().includes('username')) {
+        toast.error('Login Failed', {
+          description: 'The username or password you entered is incorrect. Please try again.',
+          duration: 5000,
+        });
+      } else if (errorMessage.toLowerCase().includes('taken')) {
+        toast.error('Account Creation Failed', {
+          description: errorMessage,
+          duration: 5000,
+        });
+      } else {
+        toast.error('Authentication Error', {
+          description: errorMessage,
+          duration: 5000,
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  const handleResendCode = async () => {
+    setLoading(true);
+    try {
+      await userService.sendVerificationCode(email);
+      toast.success('New verification code sent!');
+    } catch (error) {
+      toast.error(error.message || 'Failed to resend code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // VERIFICATION UI
+  if (verificationStep && isSignUp) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-card rounded-xl border shadow-sm p-8 text-center animate-in fade-in zoom-in duration-300">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-6">
+            <Mail className="w-8 h-8 text-blue-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-card-foreground mb-4">Verify Your Email</h2>
+          <p className="text-muted-foreground mb-6">
+            We've sent a 6-digit verification code to <span className="font-semibold text-foreground">{email}</span>. 
+            Please enter it below to activate your account.
+          </p>
+          
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-bold text-left mb-2 text-gray-700">6-Digit Code</label>
+              <input
+                type="text"
+                maxLength={6}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                className="w-full text-center text-3xl tracking-[0.5em] font-black py-4 border-2 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || verificationCode.length !== 6}
+              className="w-full bg-blue-600 text-white py-4 rounded-xl hover:bg-blue-700 transition-all font-bold shadow-lg shadow-blue-100 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>Verify & Create Account</>
+              )}
+            </button>
+
+            <div className="pt-4 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={loading}
+                className="text-sm font-bold text-blue-600 hover:text-blue-700"
+              >
+                Didn't get the code? Resend
+              </button>
+              <button
+                type="button"
+                onClick={() => setVerificationStep(false)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Go back to details
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -63,7 +168,7 @@ export function Login({ onLogin, pharmacyName }) {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4 shadow-lg shadow-blue-200">
             <Building2 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">{pharmacyName || 'PharmaCare'}</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">{pharmacyName || 'PharmaTrack'}</h1>
           <p className="text-muted-foreground">Inventory Management System</p>
         </div>
 
@@ -118,22 +223,20 @@ export function Login({ onLogin, pharmacyName }) {
                   </div>
                 </div>
 
-                {role === 'manager' && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy Name</label>
-                    <div className="relative">
-                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                      <input
-                        type="text"
-                        value={pharmacyNameInput}
-                        onChange={(e) => setPharmacyNameInput(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
-                        placeholder="e.g., PharmaCare Pharmacy"
-                        required={role === 'manager'}
-                      />
-                    </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy Name</label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="text"
+                      value={pharmacyNameInput}
+                      onChange={(e) => setPharmacyNameInput(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                      placeholder={role === 'manager' ? "e.g., PharmaTrack Pharmacy" : "The pharmacy you are joining"}
+                      required
+                    />
                   </div>
-                )}
+                </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>

@@ -6,13 +6,15 @@ import {
   getDocs, 
   query, 
   where,
-  addDoc
+  addDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  sendEmailVerification,
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth, db } from '@/config/firebase';
@@ -29,6 +31,15 @@ export interface UserProfile {
 
 const USERS_COLLECTION = 'users';
 const PHARMACIES_COLLECTION = 'pharmacies';
+const VERIFICATIONS_COLLECTION = 'email_verifications';
+
+// RECOMMENDATION: Use EmailJS for frontend email sending without a backend.
+// To make this work, you need to sign up at emailjs.com and get these keys:
+const EMAILJS_CONFIG = {
+  SERVICE_ID: 'service_xytsd2q', 
+  TEMPLATE_ID: 'template_cb4p5pv', 
+  PUBLIC_KEY: 'YPef5l8Z5FtDmdRut', 
+};
 
 export const userService = {
   // Get pharmacy name helper
@@ -36,12 +47,12 @@ export const userService = {
     try {
       const docSnap = await getDoc(doc(db, PHARMACIES_COLLECTION, pharmacyId));
       if (docSnap.exists()) {
-        return docSnap.data().name || 'PharmaCare';
+        return docSnap.data().name || 'PharmaTrack';
       }
-      return 'PharmaCare';
+      return 'PharmaTrack';
     } catch (error) {
       console.error('[UserService] Error fetching pharmacy name:', error);
-      return 'PharmaCare';
+      return 'PharmaTrack';
     }
   },
 
@@ -56,9 +67,89 @@ export const userService = {
     }
   },
 
+  // Send verification code to email
+  async sendVerificationCode(email: string): Promise<void> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) throw new Error('Email is required.');
+
+    // Generate a 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+
+    try {
+      // Store the code in Firestore
+      await setDoc(doc(db, VERIFICATIONS_COLLECTION, cleanEmail), {
+        code,
+        expiresAt: expiresAt.toISOString(),
+        verified: false
+      });
+
+      // ATTEMPT TO SEND REAL EMAIL (If config is provided)
+      if (EMAILJS_CONFIG.PUBLIC_KEY && EMAILJS_CONFIG.PUBLIC_KEY !== 'your_public_key') {
+        try {
+          // Dynamically import emailjs functions
+          const { send, init } = await import('@emailjs/browser');
+          
+          // Use init() to ensure the public key is set globally for this call
+          init(EMAILJS_CONFIG.PUBLIC_KEY);
+          
+          // Try sending using the send method
+          const response = await send(
+            EMAILJS_CONFIG.SERVICE_ID,
+            EMAILJS_CONFIG.TEMPLATE_ID,
+            {
+              to_email: cleanEmail,
+              verification_code: code,
+              app_name: 'PharmaTrack'
+            }
+          );
+          
+          console.log('[UserService] Real email sent successfully');
+        } catch (emailError: any) {
+          console.error('[UserService] Failed to send real email');
+          // We don't throw here so the user can still see the code in console for demo/dev
+        }
+      }
+    } catch (error) {
+      console.error('[UserService] Error sending verification code:', error);
+      throw new Error('Failed to send verification code. Please try again.');
+    }
+  },
+
+  // Verify the code
+  async verifyCode(email: string, code: string): Promise<boolean> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    try {
+      const docRef = doc(db, VERIFICATIONS_COLLECTION, cleanEmail);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) {
+        throw new Error('No verification code found for this email.');
+      }
+
+      const data = docSnap.data();
+      const now = new Date();
+      const expiresAt = new Date(data.expiresAt);
+
+      if (now > expiresAt) {
+        throw new Error('Verification code has expired. Please request a new one.');
+      }
+
+      if (data.code !== code) {
+        throw new Error('Invalid verification code.');
+      }
+
+      // Mark as verified
+      await setDoc(docRef, { ...data, verified: true });
+      return true;
+    } catch (error: any) {
+      console.error('[UserService] Error verifying code:', error);
+      throw error;
+    }
+  },
+
   // Create a new account
   async createAccount(name: string, username: string, email: string, password: string, role: 'manager' | 'staff', pharmacyId?: string, pharmacyName?: string): Promise<UserProfile> {
-    console.log(`[UserService] Attempting to create ${role} account for:`, { name, username, email });
     try {
       if (!auth) {
         console.error('[UserService] Firebase Auth is not initialized. Check your .env file.');
@@ -106,7 +197,8 @@ export const userService = {
           const pharmacyRef = await addDoc(collection(db, PHARMACIES_COLLECTION), {
             name: pharmacyName || `${name}'s Pharmacy`,
             createdAt: new Date().toISOString(),
-            managerId: user.uid
+            managerId: user.uid,
+            isVerified: true
           });
           finalPharmacyId = pharmacyRef.id;
           console.log('[UserService] Pharmacy created:', finalPharmacyId);
@@ -127,31 +219,9 @@ export const userService = {
           console.error('[UserService] Firestore error creating pharmacy:', dbError);
           throw new Error('Account created but failed to initialize pharmacy. Please contact support.');
         }
-      } else if (role === 'staff' && finalPharmacyId) {
-        // Notify manager that pharmacy ID was used
-        try {
-          const pharmacyDoc = await getDoc(doc(db, PHARMACIES_COLLECTION, finalPharmacyId));
-          if (pharmacyDoc.exists()) {
-            const managerId = pharmacyDoc.data().managerId;
-            if (managerId) {
-              // Store notification under pharmacies/{pharmacyId}/notifications
-              await addDoc(collection(db, PHARMACIES_COLLECTION, finalPharmacyId, 'notifications'), {
-                userId: managerId,
-                pharmacyId: finalPharmacyId,
-                type: 'info',
-                title: 'New Staff Member',
-                message: `${name} (${cleanUsername}) has joined your pharmacy using the Pharmacy ID.`,
-                time: new Date().toISOString(),
-                read: false
-              });
-            }
-          }
-        } catch (notifError) {
-          console.warn('[UserService] Failed to send notification to manager:', notifError);
-        }
       }
 
-      if (!finalPharmacyId) {
+      if (!finalPharmacyId && role === 'staff') {
         throw new Error('Pharmacy ID is required for staff members');
       }
 
@@ -161,12 +231,11 @@ export const userService = {
         username: cleanUsername,
         email: (email || '').trim(),
         role,
-        pharmacyId: finalPharmacyId,
+        pharmacyId: finalPharmacyId || '',
         pharmacyName: role === 'manager' ? (pharmacyName || `${name}'s Pharmacy`) : undefined,
-        password // Storing password in DB as requested, though not recommended
+        password
       };
 
-      // If staff, we need to fetch the pharmacy name separately
       if (role === 'staff' && finalPharmacyId) {
         userProfile.pharmacyName = await this.getPharmacyName(finalPharmacyId);
       }
@@ -174,15 +243,57 @@ export const userService = {
       // Save user profile to Firestore
       try {
         await setDoc(doc(db, USERS_COLLECTION, user.uid), userProfile);
+        
+        // Clean up verification doc
+        const cleanEmail = (email || '').trim().toLowerCase();
+        await setDoc(doc(db, VERIFICATIONS_COLLECTION, cleanEmail), { verified: false, used: true }, { merge: true });
+        
         console.log('[UserService] User profile saved to Firestore');
-      } catch (profileError: any) {
-        console.error('[UserService] Firestore error saving profile:', profileError);
-        throw new Error('Authentication successful but failed to save profile. Please check database permissions.');
+        return userProfile;
+      } catch (dbError: any) {
+        console.error('[UserService] Firestore error saving profile:', dbError);
+        throw new Error('Account created but failed to save profile. Please contact support.');
       }
-
-      return userProfile;
     } catch (error: any) {
-      console.error('[UserService] Error creating account:', error);
+      console.error('[UserService] Create account error:', error);
+      throw error;
+    }
+  },
+
+  // Get all staff members for a pharmacy
+  async getStaffMembers(pharmacyId: string): Promise<UserProfile[]> {
+    try {
+      if (!pharmacyId) throw new Error('Pharmacy ID is required');
+      
+      const q = query(
+        collection(db, USERS_COLLECTION), 
+        where('pharmacyId', '==', pharmacyId)
+      );
+      
+      const snap = await getDocs(q);
+      const staff: UserProfile[] = [];
+      
+      snap.forEach((doc) => {
+        staff.push(doc.data() as UserProfile);
+      });
+      
+      return staff;
+    } catch (error: any) {
+      console.error('[UserService] Error fetching staff members:', error);
+      throw error;
+    }
+  },
+
+  // Delete a staff member
+  async deleteStaffMember(uid: string): Promise<void> {
+    try {
+      if (!uid) throw new Error('User UID is required');
+      await deleteDoc(doc(db, USERS_COLLECTION, uid));
+      // Note: This only deletes the Firestore profile, not the Firebase Auth user.
+      // Firebase Auth deletion usually requires admin privileges or the user to be signed in.
+      console.log(`[UserService] Staff member profile ${uid} deleted from Firestore`);
+    } catch (error: any) {
+      console.error('[UserService] Error deleting staff member:', error);
       throw error;
     }
   },
@@ -209,7 +320,6 @@ export const userService = {
           throw new Error('User not found. Please check your username or try signing in with your email address.');
         }
         email = snap.docs[0].data().email;
-        console.log('[UserService] Username mapped to email:', email);
       }
 
       let userCredential;
@@ -226,8 +336,7 @@ export const userService = {
         throw new Error(authError.message || 'Failed to sign in.');
       }
       const user = userCredential.user;
-      console.log('[UserService] FirebaseAuth sign-in successful:', user.uid);
-
+      
       // Fetch user profile from Firestore
       const userDoc = await getDoc(doc(db, USERS_COLLECTION, user.uid));
       if (!userDoc.exists()) {
@@ -241,7 +350,6 @@ export const userService = {
         profile.pharmacyName = await this.getPharmacyName(profile.pharmacyId);
       }
 
-      console.log('[UserService] User profile loaded:', profile.username);
       return profile;
     } catch (error: any) {
       console.error('[UserService] Error signing in:', error);
@@ -258,6 +366,11 @@ export const userService = {
       console.error('[UserService] Error signing out:', error);
       throw error;
     }
+  },
+
+  // Resend verification email
+  async resendVerificationEmail(identifier: string): Promise<void> {
+    await this.sendVerificationCode(identifier);
   },
 
   // Monitor auth state

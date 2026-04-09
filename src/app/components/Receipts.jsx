@@ -227,7 +227,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     let y = 48;
     doc.setFontSize(16);
-    doc.text('Pharmacy Inventory System', 40, y);
+    doc.text('PharmaTrack', 40, y);
     y += 22;
     doc.setFontSize(12);
     doc.text(`Receipt ${r.id ? '#'+r.id : ''}`, 40, y);

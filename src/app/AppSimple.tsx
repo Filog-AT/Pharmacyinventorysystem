@@ -138,11 +138,11 @@ function AppSimple() {
       const saved = localStorage.getItem('pharmacy_settings');
       const parsed = saved ? JSON.parse(saved) : null;
       if (parsed && typeof parsed === 'object') {
-        return { pharmacyName: parsed.pharmacyName || 'PharmaCare', theme: parsed.theme || 'Light' };
+        return { pharmacyName: parsed.pharmacyName || 'PharmaTrack', theme: parsed.theme || 'Light' };
       }
-      return { pharmacyName: 'PharmaCare', theme: 'Light' };
+      return { pharmacyName: 'PharmaTrack', theme: 'Light' };
     } catch {
-      return { pharmacyName: 'PharmaCare', theme: 'Light' };
+      return { pharmacyName: 'PharmaTrack', theme: 'Light' };
     }
   });
 

@@ -71,7 +71,7 @@ export const buildReceiptHtml = (r, formatMoney) => {
   </style>
 </head>
 <body>
-  <div class="title">Pharmacy Inventory System</div>
+  <div class="title">PharmaTrack</div>
   <div class="subtitle">Receipt ${rid ? '#'+rid : ''} • ${label}</div>
   <table>
     <thead>

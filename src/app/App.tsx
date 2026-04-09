@@ -97,11 +97,8 @@ function App() {
 
   // Listen to auth state changes
   useEffect(() => {
-    console.log('[App] Setting up Firebase auth listener...');
-    
     // Set a timeout to prevent infinite loading
     const authTimeout = setTimeout(() => {
-      console.warn('[App] Auth initialization timeout (3s), showing login');
       if (initializing) {
         setInitializing(false);
       }
@@ -109,9 +106,7 @@ function App() {
 
     try {
       const unsubscribe = onAuthStateChanged(auth, (user: FirebaseUser | null) => {
-        console.log('[App] Auth state changed:', { hasUser: !!user, email: user?.email });
         if (user) {
-          console.log('[App] User authenticated:', user.email);
           setCurrentUser({
             uid: user.uid,
             email: user.email,
@@ -124,7 +119,6 @@ function App() {
       });
 
       return () => {
-        console.log('[App] Cleaning up auth listener');
         unsubscribe();
         clearTimeout(authTimeout);
       };

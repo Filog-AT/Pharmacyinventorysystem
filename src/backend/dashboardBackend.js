@@ -164,11 +164,17 @@ export const getLowStockMeds = (medicines) => {
     const qty = Number(m.totalQuantity || 0);
     const threshold = Number(m.minStockLevel || 50);
     return qty > 0 && qty <= threshold;
-  });
+  }).map(m => ({
+    ...m,
+    displayName: m.brandName || m.name // Use brand name for display
+  }));
 };
 
 export const getOutOfStockMeds = (medicines) => {
-  return medicines.filter(m => Number(m.totalQuantity || 0) <= 0);
+  return medicines.filter(m => Number(m.totalQuantity || 0) <= 0).map(m => ({
+    ...m,
+    displayName: m.brandName || m.name // Use brand name for display
+  }));
 };
 
 export const getExpiringSoonItems = (medicines, statusModalWindow) => {
@@ -180,7 +186,15 @@ export const getExpiringSoonItems = (medicines, statusModalWindow) => {
       if (!exp || isNaN(exp.getTime())) return;
       const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       if (days > 0 && days <= statusModalWindow) {
-        result.push({ medId: m.id, medName: m.name, batchNumber: b.batchNumber, expiryDate: b.expiryDate, quantity: b.quantity });
+        result.push({ 
+          medId: m.id, 
+          medName: m.name, 
+          brandName: m.brandName, // Added brandName
+          displayName: m.brandName || m.name, // Use brand name for display
+          batchNumber: b.batchNumber, 
+          expiryDate: b.expiryDate, 
+          quantity: b.quantity 
+        });
       }
     });
   });
@@ -189,33 +203,47 @@ export const getExpiringSoonItems = (medicines, statusModalWindow) => {
 
 export const getStockStatusCounts = (medicines, statusModalWindow) => {
   const today = new Date();
-  let expired = 0, low = 0, expSoon = 0, normal = 0;
+  let expiredCount = 0, lowCount = 0, expSoonCount = 0, healthyCount = 0;
   
   (medicines || []).forEach(m => {
-    const min = Number(m.minStockLevel || 50);
+    const totalQty = Number(m.totalQuantity || 0);
+    const minThreshold = Number(m.minStockLevel || 50);
     
-    (m.batches || []).forEach(b => {
-      const qty = Number(b.quantity || 0);
-      if (qty <= 0) return; // Skip empty batches for status counts
-
-      const d = b.expiryDate ? new Date(b.expiryDate) : null;
-      if (!d || isNaN(d.getTime())) return;
-      
-      const days = Math.ceil((d.getTime() - today.getTime()) / 86400000);
-      
-      if (d < today) {
-        expired += 1;
-      } else if (days > 0 && days <= statusModalWindow) {
-        expSoon += 1;
-      } else if (qty <= min) {
-        low += 1;
-      } else {
-        normal += 1;
-      }
+    // 1. Check if ANY batch is expired
+    const hasExpired = (m.batches || []).some(b => {
+      const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+      return exp && exp < today && Number(b.quantity || 0) > 0;
     });
+
+    // 2. Check if ANY batch is expiring soon
+    const hasExpiringSoon = !hasExpired && (m.batches || []).some(b => {
+      const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+      if (exp && exp >= today && Number(b.quantity || 0) > 0) {
+        const days = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return days <= statusModalWindow;
+      }
+      return false;
+    });
+
+    if (hasExpired) {
+      expiredCount++;
+    } else if (totalQty === 0) {
+      // Out of stock
+    } else if (totalQty <= minThreshold) {
+      lowCount++;
+    } else if (hasExpiringSoon) {
+      expSoonCount++;
+    } else {
+      healthyCount++;
+    }
   });
-  
-  return { expired, low, expSoon, normal };
+
+  return [
+    { label: 'Healthy', value: healthyCount, color: '#10b981' },
+    { label: 'Low Stock', value: lowCount, color: '#f59e0b' },
+    { label: 'Expiring Soon', value: expSoonCount, color: '#facc15' },
+    { label: 'Expired', value: expiredCount, color: '#ef4444' }
+  ];
 };
 
 export const getRevenueKPIs = (receipts, medicines) => {
@@ -310,16 +338,16 @@ export const getNotifications = (medicines, recentLogs, receipts) => {
     const qty = Number(med.totalQuantity || 0);
     const lowStockThreshold = med.minStockLevel || 50;
     if (qty <= lowStockThreshold) {
-      list.push({ id: `low-${med.id}`, type: 'warning', title: 'Low Stock', message: `${med.name} is low (${qty})`, time: 'Recent' });
+      list.push({ id: `low-${med.id}`, type: 'warning', title: 'Low Stock', message: `${med.brandName || med.name} is low (${qty})`, time: 'Recent' });
     }
     (med.batches || []).forEach((b) => {
       if (!b.expiryDate) return;
       const exp = new Date(b.expiryDate);
       const days = Math.ceil((exp.getTime() - today.getTime()) / 86400000);
       if (days < 0) {
-        list.push({ id: `expired-${med.id}-${b.id}`, type: 'error', title: 'Expired', message: `${med.name} (Batch ${b.batchNumber}) expired`, time: 'Alert' });
+        list.push({ id: `expired-${med.id}-${b.id}`, type: 'error', title: 'Expired', message: `${med.brandName || med.name} (Batch ${b.batchNumber}) expired`, time: 'Alert' });
       } else if (days <= 90) {
-        list.push({ id: `expiring-${med.id}-${b.id}`, type: 'warning', title: 'Expiring Soon', message: `${med.name} expires in ${days}d`, time: 'Alert' });
+        list.push({ id: `expiring-${med.id}-${b.id}`, type: 'warning', title: 'Expiring Soon', message: `${med.brandName || med.name} expires in ${days}d`, time: 'Alert' });
       }
     });
   });
@@ -482,16 +510,24 @@ export const getTop10MedicinesByStock = (medicines) => {
 
 export const getExpiredItems = (medicines) => {
   const today = new Date();
-  const expiredItems = [];
+  const result = [];
   medicines.forEach(m => {
     (m.batches || []).forEach(b => {
-      const d = new Date(b.expiryDate);
-      if (d < today && Number(b.quantity || 0) > 0) {
-        expiredItems.push({ medId: m.id, medName: m.name, batchNumber: b.batchNumber, expiryDate: b.expiryDate, quantity: b.quantity });
+      const exp = b.expiryDate ? new Date(b.expiryDate) : null;
+      if (exp && exp < today && Number(b.quantity || 0) > 0) {
+        result.push({ 
+          medId: m.id, 
+          medName: m.name, 
+          brandName: m.brandName, // Added brandName
+          displayName: m.brandName || m.name, // Use brand name for display
+          batchNumber: b.batchNumber, 
+          expiryDate: b.expiryDate, 
+          quantity: b.quantity 
+        });
       }
     });
   });
-  return expiredItems;
+  return result.slice(0, 10);
 };
 
 export const getLast7DaysRevenueStrict = (receipts) => {

@@ -1,4 +1,4 @@
-# 🎉 Pharmacy Inventory System - Setup Complete!
+# 🎉 PharmaTrack - Setup Complete!
 
 ## ✅ What's Working Now
 

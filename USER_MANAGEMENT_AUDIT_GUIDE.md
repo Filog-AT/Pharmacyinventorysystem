@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Pharmacy Inventory System now includes a complete **User Management** system and **Comprehensive Audit Logging** that tracks all activities. These features are **Owner-only** and provide full visibility into who did what and when.
+The PharmaTrack system now includes a complete **User Management** system and **Comprehensive Audit Logging** that tracks all activities. These features are **Owner-only** and provide full visibility into who did what and when.
 
 ## Features
 
