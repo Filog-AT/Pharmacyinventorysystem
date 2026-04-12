@@ -78,6 +78,8 @@ function AppSimple() {
             setSettings(prev => ({ 
               ...prev, 
               pharmacyName: pharmacy.name || user.pharmacyName || prev.pharmacyName,
+              address: pharmacy.address || '',
+              contact: pharmacy.contact || '',
               logoUrl: pharmacy.logoUrl || '',
               sidebarColor: pharmacy.sidebarColor || '',
               contentColor: pharmacy.contentColor || ''
@@ -468,6 +470,12 @@ function AppSimple() {
         const medicine = medicines.find(m => m.id === medicineId);
         if (!medicine) throw new Error('Medicine not found');
 
+        // Calculate added quantity in pcs
+        const boxes = Number(batchData.boxesReceived || 0);
+        const blisters = Number(batchData.blistersPerBox || 1);
+        const units = Number(batchData.unitsPerBlister || 1);
+        const totalUnits = boxes * blisters * units;
+
         await services.medicineService.addBatch(
           currentUser.pharmacyId,
           medicine.categoryId,
@@ -485,7 +493,11 @@ function AppSimple() {
           action: 'ADD_BATCH',
           entityType: 'medicine',
           entityName: medicine.name,
-          details: { medicineId, ...batchData }
+          details: { 
+            medicineId, 
+            ...batchData,
+            addedQuantity: totalUnits
+          }
         });
       }
     } catch (error) {
@@ -537,6 +549,11 @@ function AppSimple() {
         const medicine = medicines.find(m => m.id === medicineId);
         if (!medicine) throw new Error('Medicine not found');
 
+        const batch = (medicine.batches || []).find((b: any) => b.id === batchId);
+        const batchQty = Number(batch?.quantity || 0);
+        const isExpired = batch?.expiryDate ? new Date(batch.expiryDate) < new Date() : false;
+        const isOutOfStock = batchQty === 0;
+
         await services.medicineService.deleteBatch(
           currentUser.pharmacyId,
           medicine.categoryId,
@@ -554,7 +571,15 @@ function AppSimple() {
           action: 'DELETE_BATCH',
           entityType: 'medicine',
           entityName: medicine.name,
-          details: { medicineId, batchId }
+          details: { 
+            medicineId, 
+            batchId, 
+            batchNumber: batch?.batchNumber,
+            quantity: batchQty,
+            isExpired,
+            isOutOfStock,
+            reason: isExpired ? 'Expired' : (isOutOfStock ? 'Out of Stock' : 'Manual Removal')
+          }
         });
       }
     } catch (error) {
@@ -571,6 +596,10 @@ function AppSimple() {
         const medicine = medicines.find(m => m.id === id);
         if (!medicine) throw new Error('Medicine not found');
 
+        const oldPrice = Number(medicine.price || 0);
+        const newPrice = Number(medicineData.price || 0);
+        const isPriceUpdate = oldPrice !== newPrice;
+
         await services.medicineService.updateMedicine(
           currentUser.pharmacyId,
           medicine.categoryId,
@@ -585,10 +614,16 @@ function AppSimple() {
           userId: currentUser.uid,
           userName: currentUser.name,
           userRole: currentUser.role,
-          action: 'UPDATE',
+          action: isPriceUpdate ? 'UPDATE_PRICE' : 'UPDATE',
           entityType: 'medicine',
           entityName: medicine.name,
-          details: { id, ...medicineData }
+          details: { 
+            id, 
+            ...medicineData,
+            priceChanged: isPriceUpdate,
+            oldPrice,
+            newPrice
+          }
         });
       }
     } catch (error: any) {
@@ -752,12 +787,12 @@ function AppSimple() {
       case 'orders':
         return <OrdersSuppliers />;
       case 'activity':
-        return <AuditLog currentUser={currentUser} />;
+        return <AuditLog currentUser={currentUser} settings={settings} />;
       case 'receipts':
         if (currentUser?.role !== 'staff') {
           return <div className="p-6">Unauthorized</div>;
         }
-        return <SalesPOS medicines={medicines} currentUser={currentUser} />;
+        return <SalesPOS medicines={medicines} currentUser={currentUser} settings={settings} />;
       default:
         if (currentUser?.role === 'staff') {
           return <StaffDashboard medicines={medicines} currentUser={currentUser} />;

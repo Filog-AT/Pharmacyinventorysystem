@@ -63,17 +63,49 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
   const handleUpdatePharmacy = async () => {
     try {
       if (!currentUser?.pharmacyId) return;
+      
+      const updatedFields = {};
+      if (localPharmacyName !== settings?.pharmacyName) updatedFields.pharmacyName = localPharmacyName;
+      if (localAddress !== settings?.address) updatedFields.address = localAddress;
+      if (localContact !== settings?.contact) updatedFields.contact = localContact;
+
       await pharmacyService.updatePharmacy(currentUser.pharmacyId, {
         name: localPharmacyName,
         address: localAddress,
         contact: localContact
       });
+      
       onUpdateSettings?.({ 
         ...settings, 
         pharmacyName: localPharmacyName,
         address: localAddress,
         contact: localContact
       });
+
+      if (Object.keys(updatedFields).length > 0) {
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'PHARMACY_EDIT',
+          entityType: 'settings',
+          entityName: 'Pharmacy Profile',
+          details: {
+            changes: updatedFields,
+            before: {
+              pharmacyName: settings?.pharmacyName || '',
+              address: settings?.address || '',
+              contact: settings?.contact || ''
+            },
+            after: {
+              pharmacyName: localPharmacyName || '',
+              address: localAddress || '',
+              contact: localContact || ''
+            }
+          }
+        });
+      }
+
       toast.success('Pharmacy information updated');
     } catch (error) {
       console.error('Error updating pharmacy:', error);

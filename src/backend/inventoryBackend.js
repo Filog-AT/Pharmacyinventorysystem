@@ -4,10 +4,11 @@
  */
 
 export const getStockStatus = (totalQuantity, minStockLevel) => {
-  if (totalQuantity <= 0) return { label: 'Out of Stock', color: 'bg-rose-100 text-rose-700 border-rose-200 shadow-sm ring-1 ring-rose-400/20' };
-  const effectiveMin = Math.max(50, Number(minStockLevel || 0));
-  if (totalQuantity <= effectiveMin) return { label: 'Low Stock', color: 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm ring-1 ring-amber-400/20' };
-  return { label: 'Normal Stock', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+  const qty = Number(totalQuantity || 0);
+  const min = Number(minStockLevel || 50);
+  if (qty === 0) return { label: 'Out of Stock', color: 'bg-red-100 text-red-700 border-red-200' };
+  if (qty <= min) return { label: 'Low Stock', color: 'bg-amber-100 text-amber-700 border-amber-200' };
+  return { label: 'Normal', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
 };
 
 export const getFilteredMedicines = (safeMedicines, searchTerm, categoryFilter, viewMode, selectedCategory) => {

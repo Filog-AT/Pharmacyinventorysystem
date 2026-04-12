@@ -1,4 +1,4 @@
-import { X, Trash2, Calendar, Package, Tag, Pencil } from 'lucide-react';
+import { X, Trash2, Calendar, Package, Tag, Pencil, AlertTriangle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar, Cell } from 'recharts';
 import { medicineService } from '@/services/medicineService';
@@ -6,6 +6,7 @@ import * as viewBatchesBackend from '@/backend/viewBatchesBackend';
 
 export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch, onUpdateBatch }) {
   const [editingBatch, setEditingBatch] = useState(null);
+  const [batchToDelete, setBatchToDelete] = useState(null);
   const [editFormData, setEditFormData] = useState({
     batchNumber: '',
     expiryDate: '',
@@ -300,11 +301,7 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
                                 <Pencil className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => {
-                                  if (confirm(`Are you sure you want to delete batch ${batch.batchNumber}?`)) {
-                                    onDeleteBatch(medicine.id, batch.id);
-                                  }
-                                }}
+                                onClick={() => setBatchToDelete(batch)}
                                 className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                 title="Delete Batch"
                               >
@@ -349,6 +346,42 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
           </button>
         </div>
       </div>
+
+      {/* Better Delete Alert Modal */}
+      {batchToDelete && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-6">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-2">Delete Batch?</h3>
+              <p className="text-gray-500 text-sm font-medium leading-relaxed mb-8">
+                Are you sure you want to delete batch <span className="text-gray-900 font-bold">#{batchToDelete.batchNumber}</span>? 
+                This action cannot be undone and will remove <span className="text-gray-900 font-bold">{batchToDelete.quantity} {medicine.unit}</span> from inventory.
+              </p>
+              
+              <div className="flex flex-col w-full gap-3">
+                <button
+                  onClick={() => {
+                    onDeleteBatch(medicine.id, batchToDelete.id);
+                    setBatchToDelete(null);
+                  }}
+                  className="w-full bg-red-600 text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-100 transform hover:-translate-y-0.5 active:translate-y-0"
+                >
+                  Confirm Delete
+                </button>
+                <button
+                  onClick={() => setBatchToDelete(null)}
+                  className="w-full bg-white text-gray-400 py-4 rounded-xl font-black uppercase tracking-widest border-2 border-gray-100 hover:bg-gray-50 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

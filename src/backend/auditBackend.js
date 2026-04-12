@@ -19,10 +19,7 @@ export const normalizeLogs = (fetched) => {
 };
 
 export const filterLogs = (logs, filters) => {
-  // Exclude MEDICINE_SOLD and SALE_COMPLETED actions
-  let filtered = logs.filter(
-    (log) => log.action !== 'MEDICINE_SOLD' && log.action !== 'SALE_COMPLETED'
-  );
+  let filtered = [...logs];
 
   if (filters.action) {
     filtered = filtered.filter((log) => log.action === filters.action);

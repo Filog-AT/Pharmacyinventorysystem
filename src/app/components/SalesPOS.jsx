@@ -5,7 +5,7 @@ import { medicineService } from '@/services/medicineService';
 import { receiptService } from '@/services/receiptService';
 import * as salesBackend from '@/backend/salesBackend';
 
-export function SalesPOS({ medicines, currentUser }) {
+export function SalesPOS({ medicines, currentUser, settings }) {
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -75,7 +75,7 @@ export function SalesPOS({ medicines, currentUser }) {
     const existing = cart.find(item => item.medicine.id === latestMedicine.id && item.sellUnit === defaultUnit);
     if (existing) {
       const maxQ = getMaxSaleQuantity(latestMedicine, defaultUnit);
-      if (existing.quantity >= maxQ) {
+      if ((existing.quantity + (existing.extraPieces || 0)) >= maxQ) {
         alert('Cannot add more than available stock');
         return;
       }
@@ -90,23 +90,93 @@ export function SalesPOS({ medicines, currentUser }) {
         alert('Out of stock');
         return;
       }
-      setCart([...cart, { medicine: latestMedicine, quantity: 1, sellUnit: defaultUnit, unitPrice }]);
+      setCart([...cart, { medicine: latestMedicine, quantity: 1, extraPieces: 0, sellUnit: defaultUnit, unitPrice }]);
     }
   };
 
-  const updateQuantity = (medicineId, unit, delta) => {
+  const setQuantity = (medicineId, unit, val) => {
+    // If empty string, set it as empty string so user can type freely
+    if (val === '') {
+      setCart(cart.map(item => {
+        if (item.medicine.id === medicineId && item.sellUnit === unit) {
+          return { ...item, quantity: '' };
+        }
+        return item;
+      }));
+      return;
+    }
+
+    const num = parseInt(val);
+    if (isNaN(num)) return;
+
     setCart(cart.map(item => {
       if (item.medicine.id === medicineId && item.sellUnit === unit) {
-        const maxQ = getMaxSaleQuantity(item.medicine, unit);
-        const newQty = item.quantity + delta;
-        if (newQty > maxQ) {
-          alert('Cannot exceed available stock');
-          return item;
-        }
-        return { ...item, quantity: Math.max(1, newQty) };
+        const multiplier = getUnitMultiplier(item.medicine, unit);
+        const totalStockInPcs = getMaxSaleQuantity(item.medicine, 'piece');
+        const extraPcs = Number(item.extraPieces || 0);
+        const availableForUnits = Math.floor((totalStockInPcs - extraPcs) / multiplier);
+        
+        const validatedQty = Math.max(0, Math.min(num, availableForUnits));
+        return { ...item, quantity: validatedQty };
       }
       return item;
-    }).filter(item => item.quantity > 0));
+    }));
+  };
+
+  const handleQuantityBlur = (medicineId, unit) => {
+    setCart(cart.map(item => {
+      if (item.medicine.id === medicineId && item.sellUnit === unit) {
+        if (item.quantity === '' || item.quantity === 0) {
+          // If empty or 0, check if we have extra pieces
+          if (Number(item.extraPieces || 0) === 0) {
+            // Both empty, default back to 1 if it was just added, or remove if user wants
+            // User requested "it should go to 1"
+            return { ...item, quantity: 1 };
+          }
+          return { ...item, quantity: 0 };
+        }
+      }
+      return item;
+    }));
+  };
+
+  const setExtraPieces = (medicineId, unit, val) => {
+    if (val === '') {
+      setCart(cart.map(item => {
+        if (item.medicine.id === medicineId && item.sellUnit === unit) {
+          return { ...item, extraPieces: '' };
+        }
+        return item;
+      }));
+      return;
+    }
+
+    const num = parseInt(val);
+    if (isNaN(num)) return;
+
+    setCart(cart.map(item => {
+      if (item.medicine.id === medicineId && item.sellUnit === unit) {
+        const multiplier = getUnitMultiplier(item.medicine, unit);
+        const totalStockInPcs = getMaxSaleQuantity(item.medicine, 'piece');
+        const consumedByUnits = (Number(item.quantity || 0)) * multiplier;
+        const availableForExtra = totalStockInPcs - consumedByUnits;
+        
+        const validatedExtra = Math.max(0, Math.min(num, availableForExtra));
+        return { ...item, extraPieces: validatedExtra };
+      }
+      return item;
+    }));
+  };
+
+  const handleExtraBlur = (medicineId, unit) => {
+    setCart(cart.map(item => {
+      if (item.medicine.id === medicineId && item.sellUnit === unit) {
+        if (item.extraPieces === '') {
+          return { ...item, extraPieces: 0 };
+        }
+      }
+      return item;
+    }));
   };
 
   const removeFromCart = (medicineId, unit) => {
@@ -114,7 +184,11 @@ export function SalesPOS({ medicines, currentUser }) {
   };
 
   const total = useMemo(() => {
-    const sum = cart.reduce((acc, item) => acc + (Number(item.unitPrice || 0) * item.quantity), 0);
+    const sum = cart.reduce((acc, item) => {
+      const mainTotal = Number(item.unitPrice || 0) * item.quantity;
+      const extraTotal = (Number(item.medicine.price || 0)) * (item.extraPieces || 0);
+      return acc + mainTotal + extraTotal;
+    }, 0);
     return Number(sum.toFixed(2));
   }, [cart]);
 
@@ -151,23 +225,32 @@ export function SalesPOS({ medicines, currentUser }) {
       const saleItems = cart.map(item => ({
         medicineId: item.medicine.id,
         categoryId: item.medicine.categoryId,
-        quantity: item.quantity * getUnitMultiplier(item.medicine, item.sellUnit)
+        quantity: (item.quantity * getUnitMultiplier(item.medicine, item.sellUnit)) + (item.extraPieces || 0)
       }));
 
       await medicineService.processSale(currentUser.pharmacyId, saleItems);
 
       // Create a receipt
       const receiptData = {
-        items: cart.map(item => ({
-          medicineId: item.medicine.id,
-          categoryId: item.medicine.categoryId,
-          name: item.medicine.name,
-          quantity: item.quantity,
-          sellUnit: item.sellUnit,
-          price: Number(item.unitPrice || item.medicine.price || 0),
-          subtotal: Number((item.unitPrice || item.medicine.price || 0) * item.quantity),
-          unitSold: item.sellUnit
-        })),
+        items: cart.map(item => {
+          const multiplier = getUnitMultiplier(item.medicine, item.sellUnit);
+          const totalUnitsInPcs = (item.quantity * multiplier) + (item.extraPieces || 0);
+          const basePrice = Number(item.medicine.price || 0);
+          const itemSubtotal = (Number(item.unitPrice || 0) * item.quantity) + (basePrice * (item.extraPieces || 0));
+          
+          return {
+            medicineId: item.medicine.id,
+            categoryId: item.medicine.categoryId,
+            name: item.medicine.name,
+            quantity: item.quantity,
+            extraPieces: item.extraPieces || 0,
+            sellUnit: item.sellUnit,
+            price: Number(item.unitPrice || item.medicine.price || 0),
+            subtotal: Number(itemSubtotal.toFixed(2)),
+            unitSold: item.sellUnit,
+            totalQuantityPcs: totalUnitsInPcs
+          };
+        }),
         total: Number(total),
         tax: Number(tax),
         grandTotal: Number(grandTotal),
@@ -177,7 +260,7 @@ export function SalesPOS({ medicines, currentUser }) {
         timestamp: new Date(),
         pharmacyId: currentUser.pharmacyId,
         processedBy: currentUser.uid,
-        processedByName: currentUser.name
+        processedByName: currentUser.name || currentUser.username || 'System'
       };
 
       const receiptId = await receiptService.addReceipt(currentUser.pharmacyId, receiptData);
@@ -186,7 +269,7 @@ export function SalesPOS({ medicines, currentUser }) {
       // Log sale completion to audit trail
       await auditService.logAction(currentUser.pharmacyId, {
         userId: currentUser?.uid || 'unknown',
-        userName: currentUser?.name || 'Unknown User',
+        userName: currentUser?.name || currentUser?.username || 'Unknown User',
         userRole: currentUser?.role || 'unknown',
         action: 'SALE_COMPLETED',
         entityType: 'sale',
@@ -198,6 +281,13 @@ export function SalesPOS({ medicines, currentUser }) {
           amountReceived: Number(amountReceived),
           change: change,
           customerName: customerName || 'Walk-in',
+          items: cart.map(it => ({
+            name: it.medicine?.name || 'Unknown Item',
+            quantity: it.quantity,
+            extraPieces: it.extraPieces || 0,
+            unit: it.sellUnit || 'pc',
+            price: Number(it.unitPrice || it.medicine?.price || 0)
+          }))
         },
       });
 
@@ -227,7 +317,10 @@ export function SalesPOS({ medicines, currentUser }) {
   const handlePrintReceipt = (r) => {
     if (!r) return;
     const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
-    const label = ts.toLocaleString();
+    const label = ts.toLocaleString('en-PH', { 
+      year: 'numeric', month: 'long', day: 'numeric', 
+      hour: '2-digit', minute: '2-digit', second: '2-digit' 
+    });
     const items = Array.isArray(r.items) ? r.items : [];
     const grand = r.grandTotal || (r.total || 0) + (r.tax || 0);
     const formatMoney = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
@@ -237,39 +330,112 @@ export function SalesPOS({ medicines, currentUser }) {
         <head>
           <title>Receipt - ${r.id}</title>
           <style>
-            body { font-family: 'Courier New', Courier, monospace; width: 300px; margin: 0 auto; padding: 20px; font-size: 12px; }
+            @page { margin: 0; }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              width: 80mm; 
+              margin: 0 auto; 
+              padding: 10mm 5mm; 
+              font-size: 11px; 
+              color: #000;
+              line-height: 1.4;
+            }
             .center { text-align: center; }
             .bold { font-weight: bold; }
-            .divider { border-bottom: 1px dashed #000; margin: 10px 0; }
-            .flex { display: flex; justify-content: space-between; }
-            .mt-10 { margin-top: 10px; }
+            .header { font-size: 16px; margin-bottom: 2px; text-transform: uppercase; }
+            .subheader { font-size: 10px; margin-bottom: 10px; }
+            .divider { border-bottom: 1px dashed #000; margin: 8px 0; }
+            .flex { display: flex; justify-content: space-between; align-items: flex-start; }
+            .items-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            .items-table th { text-align: left; border-bottom: 1px solid #000; padding-bottom: 5px; }
+            .items-table td { padding: 4px 0; vertical-align: top; }
+            .total-section { margin-top: 10px; }
+            .total-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+            .grand-total { font-size: 14px; margin-top: 5px; border-top: 1px solid #000; padding-top: 5px; }
+            .footer { margin-top: 20px; font-size: 9px; }
+            .qr-placeholder { margin: 15px 0; font-size: 8px; border: 1px solid #eee; padding: 10px; }
           </style>
         </head>
         <body>
-          <div class="center bold" style="font-size: 16px;">PHARMACY SYSTEM</div>
-          <div class="center">INVENTORY & POS</div>
+          <div class="center bold header">${settings?.pharmacyName || 'PHARMATRACK'}</div>
+          <div class="center subheader">PROFESSIONAL PHARMACY SYSTEM</div>
+          <div class="center" style="font-size: 9px; margin-bottom: 15px;">
+            ${settings?.address || 'Quality Healthcare & Medicine<br>Manila, Philippines'}<br>
+            ${settings?.contact || ''}
+          </div>
+          
           <div class="divider"></div>
+          
           <div class="flex"><span>Date:</span> <span>${label}</span></div>
-          <div class="flex"><span>Receipt #:</span> <span>${r.id?.slice(-8) || 'N/A'}</span></div>
+          <div class="flex"><span>Receipt #:</span> <span class="bold">${r.id?.slice(-12).toUpperCase() || 'N/A'}</span></div>
           <div class="flex"><span>Customer:</span> <span>${r.customerName || 'Walk-in'}</span></div>
+          <div class="flex"><span>Cashier:</span> <span>${r.processedByName || 'System'}</span></div>
+          
           <div class="divider"></div>
-          <div class="bold flex"><span>Item</span> <span>Total</span></div>
-          ${items.map(it => `
-            <div class="flex">
-              <span>${it.name} x${it.quantity}</span>
-              <span>${formatMoney(it.subtotal || (it.price * it.quantity))}</span>
+          
+          <table class="items-table">
+            <thead>
+              <tr class="bold">
+                <th width="60%">Item Description</th>
+                <th width="15%" style="text-align: center;">Qty</th>
+                <th width="25%" style="text-align: right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(it => `
+                <tr>
+                  <td>
+                    ${it.name}<br>
+                    <span style="font-size: 9px; color: #444;">@ ${formatMoney(it.price)}/${it.sellUnit || 'pc'}</span>
+                    ${it.extraPieces ? `<br><span style="font-size: 9px; color: #444;">+ ${it.extraPieces} pcs</span>` : ''}
+                  </td>
+                  <td style="text-align: center;">${it.quantity}</td>
+                  <td style="text-align: right;">${formatMoney(it.subtotal || (it.price * it.quantity))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div class="divider"></div>
+          
+          <div class="total-section">
+            <div class="total-row">
+              <span>Subtotal:</span>
+              <span>${formatMoney(r.total || 0)}</span>
             </div>
-          `).join('')}
+            <div class="total-row">
+              <span>VAT (12%):</span>
+              <span>${formatMoney(r.tax || 0)}</span>
+            </div>
+            <div class="total-row bold grand-total">
+              <span>GRAND TOTAL:</span>
+              <span>${formatMoney(grand)}</span>
+            </div>
+          </div>
+          
           <div class="divider"></div>
-          <div class="flex"><span>Subtotal:</span> <span>${formatMoney(r.total || 0)}</span></div>
-          <div class="flex"><span>VAT (12%):</span> <span>${formatMoney(r.tax || 0)}</span></div>
-          <div class="flex bold" style="font-size: 14px;"><span>GRAND TOTAL:</span> <span>${formatMoney(grand)}</span></div>
+          
+          <div class="total-row">
+            <span>CASH RECEIVED:</span>
+            <span>${formatMoney(r.amountReceived || 0)}</span>
+          </div>
+          <div class="total-row bold">
+            <span>CHANGE:</span>
+            <span>${formatMoney(r.change || 0)}</span>
+          </div>
+          
           <div class="divider"></div>
-          <div class="flex"><span>CASH RECEIVED:</span> <span>${formatMoney(r.amountReceived || 0)}</span></div>
-          <div class="flex bold"><span>CHANGE:</span> <span>${formatMoney(r.change || 0)}</span></div>
-          <div class="divider"></div>
-          <div class="center mt-10">Thank you for your purchase!</div>
-          <div class="center">Processed by: ${r.processedByName || 'System'}</div>
+          
+          <div class="center footer">
+            <div class="bold">THANK YOU FOR YOUR PURCHASE!</div>
+            <div>Please keep this receipt for your records.</div>
+            <div style="margin-top: 5px;">This serves as your Official Receipt.</div>
+          </div>
+          
+          <div class="center qr-placeholder">
+            [ SYSTEM GENERATED TRANSACTION ]<br>
+            ${r.id}
+          </div>
         </body>
       </html>
     `;
@@ -603,27 +769,53 @@ export function SalesPOS({ medicines, currentUser }) {
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 bg-white/50 rounded-md p-1 border">
-                        <button
-                          onClick={() => updateQuantity(item.medicine.id, item.sellUnit, -1)}
-                          className="p-1 hover:bg-gray-200 rounded text-gray-700"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="w-8 text-center font-bold text-gray-900">{item.quantity}</span>
-                        <button
-                          onClick={() => updateQuantity(item.medicine.id, item.sellUnit, 1)}
-                          className="p-1 hover:bg-gray-200 rounded text-gray-700"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
+                    <div className="flex flex-col gap-2 bg-gray-50/80 p-3 rounded-xl border border-gray-100/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-col">
+                            <label className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1 ml-1">Qty ({item.sellUnit})</label>
+                            <div className="relative group">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.quantity}
+                                onChange={(e) => setQuantity(item.medicine.id, item.sellUnit, e.target.value)}
+                                onBlur={() => handleQuantityBlur(item.medicine.id, item.sellUnit)}
+                                className="w-20 text-center font-black text-gray-900 border-2 border-white rounded-xl py-2 shadow-sm bg-white outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm"
+                              />
+                            </div>
+                          </div>
+                          
+                          {item.sellUnit !== 'piece' && (
+                            <div className="flex flex-col">
+                              <label className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1 ml-1">Pcs</label>
+                              <div className="relative group">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.extraPieces || 0}
+                                  onChange={(e) => setExtraPieces(item.medicine.id, item.sellUnit, e.target.value)}
+                                  onBlur={() => handleExtraBlur(item.medicine.id, item.sellUnit)}
+                                  className="w-16 text-center font-black text-gray-900 border-2 border-white rounded-xl py-2 shadow-sm bg-white outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[9px] text-gray-400 font-black uppercase tracking-widest">Total Pcs:</span>
+                            <span className="text-[11px] font-black text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                              {(Number(item.quantity || 0) * getUnitMultiplier(item.medicine, item.sellUnit)) + Number(item.extraPieces || 0)}
+                            </span>
+                          </div>
+                          <span className="text-lg font-black text-blue-700 tracking-tight">
+                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+                              Number(((Number(item.unitPrice || 0) * Number(item.quantity || 0)) + (Number(item.medicine.price || 0) * Number(item.extraPieces || 0))).toFixed(2))
+                            )}
+                          </span>
+                        </div>
                       </div>
-                      <span className="font-bold text-blue-700">
-                        {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
-                          Number(((item.unitPrice || (item.medicine.price || 0)) * item.quantity).toFixed(2))
-                        )}
-                      </span>
                     </div>
                   </div>
                 ))
@@ -855,24 +1047,6 @@ export function SalesPOS({ medicines, currentUser }) {
             <FileText className="w-5 h-5 text-blue-600" />
             Receipts History
           </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleDownloadAllCSV}
-              disabled={receipts.length === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition-colors disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download All (CSV)
-            </button>
-            <button
-              onClick={handleClearHistory}
-              disabled={receipts.length === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear History
-            </button>
-          </div>
         </div>
         
         {receipts.length === 0 ? (
@@ -886,6 +1060,7 @@ export function SalesPOS({ medicines, currentUser }) {
               const subtotal = r.total || 0;
               const tax = r.tax || 0;
               const grand = r.grandTotal || (subtotal + tax);
+              const formatMoney = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
               
               return (
                 <div key={r.id} className="bg-gray-50 rounded-lg border p-4 hover:shadow-sm transition-all">
@@ -895,20 +1070,36 @@ export function SalesPOS({ medicines, currentUser }) {
                       <p className="font-semibold text-sm">Customer: {r.customerName || 'Walk-in'}</p>
                     </div>
                     <span className="text-blue-600 font-bold text-sm">
-                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grand)}
+                      {formatMoney(grand)}
                     </span>
                   </div>
                   
                   <div className="space-y-1 mb-3">
                     {items.slice(0, 3).map((it, idx) => (
                       <div key={idx} className="flex justify-between text-[11px] text-gray-600">
-                        <span className="truncate pr-2">{it.name} x{it.quantity}</span>
-                        <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(it.subtotal || (it.price * it.quantity))}</span>
+                        <span className="truncate pr-2">
+                          {it.name} 
+                          {it.extraPieces > 0 
+                            ? ` (${it.quantity} ${it.sellUnit} + ${it.extraPieces} pcs)` 
+                            : ` x${it.quantity} ${it.sellUnit}`}
+                        </span>
+                        <span>{formatMoney(it.subtotal || (it.price * it.quantity))}</span>
                       </div>
                     ))}
                     {items.length > 3 && (
                       <p className="text-[10px] text-gray-400">+{items.length - 3} more items</p>
                     )}
+                  </div>
+
+                  <div className="bg-white/50 rounded p-2 mb-3 text-[10px] space-y-1 border border-gray-100">
+                    <div className="flex justify-between text-gray-500">
+                      <span>Cash Received:</span>
+                      <span className="font-bold text-gray-700">{formatMoney(r.amountReceived || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-400">
+                      <span>Seller:</span>
+                      <span className="font-medium italic">{r.processedByName || 'System'}</span>
+                    </div>
                   </div>
                   
                   <div className="flex gap-2 border-t pt-3">
@@ -917,12 +1108,6 @@ export function SalesPOS({ medicines, currentUser }) {
                       className="flex-1 text-[11px] bg-white border py-1.5 rounded hover:bg-gray-100 transition-colors font-medium"
                     >
                       Print
-                    </button>
-                    <button
-                      onClick={() => handleDownloadReceipt(r)}
-                      className="flex-1 text-[11px] bg-blue-50 text-blue-600 py-1.5 rounded hover:bg-blue-100 transition-colors font-medium"
-                    >
-                      Download
                     </button>
                   </div>
                 </div>

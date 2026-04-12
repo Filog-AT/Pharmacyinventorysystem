@@ -98,5 +98,18 @@ export const receiptService = {
       console.error('Error deleting receipt:', error);
       throw error;
     }
+  },
+
+  async clearAllReceipts(pharmacyId: string): Promise<void> {
+    if (!pharmacyId) throw new Error('Pharmacy ID is required');
+    try {
+      const q = query(collection(db, 'pharmacies', pharmacyId, 'receipts'));
+      const querySnapshot = await getDocs(q);
+      const deletePromises = querySnapshot.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+    } catch (error) {
+      console.error('Error clearing all receipts:', error);
+      throw error;
+    }
   }
 };
