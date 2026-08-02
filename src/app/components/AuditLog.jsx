@@ -365,8 +365,8 @@ export function AuditLog({ currentUser, settings }) {
           
           <div class="center footer">
             <div class="bold">THANK YOU FOR YOUR PURCHASE!</div>
-            <div>Please keep this receipt for your records.</div>
-            <div style="margin-top: 5px;">This serves as your Official Receipt.</div>
+            <div>Please keep this invoice for your records.</div>
+            <div style="margin-top: 5px;">This serves as your Customer Invoice.</div>
           </div>
           
           <div class="center qr-placeholder">

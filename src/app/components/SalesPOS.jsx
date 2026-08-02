@@ -196,9 +196,13 @@ export function SalesPOS({ medicines, currentUser, settings }) {
     return Number((total * 0.12).toFixed(2));
   }, [total]);
 
-  const grandTotal = useMemo(() => {
-    return Number((total + tax).toFixed(2));
+  const subtotal = useMemo(() => {
+    return Number((total - tax).toFixed(2));
   }, [total, tax]);
+
+  const grandTotal = useMemo(() => {
+    return Number((subtotal + tax).toFixed(2));
+  }, [subtotal, tax]);
 
   const change = useMemo(() => {
     const val = (Number(amountReceived) || 0) - grandTotal;
@@ -358,7 +362,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
         </head>
         <body>
           <div class="center bold header">${settings?.pharmacyName || 'PHARMATRACK'}</div>
-          <div class="center subheader">PROFESSIONAL PHARMACY SYSTEM</div>
+          <div class="center subheader">CUSTOMER INVOICE</div>
           <div class="center" style="font-size: 9px; margin-bottom: 15px;">
             ${settings?.address || 'Quality Healthcare & Medicine<br>Manila, Philippines'}<br>
             ${settings?.contact || ''}
@@ -428,8 +432,8 @@ export function SalesPOS({ medicines, currentUser, settings }) {
           
           <div class="center footer">
             <div class="bold">THANK YOU FOR YOUR PURCHASE!</div>
-            <div>Please keep this receipt for your records.</div>
-            <div style="margin-top: 5px;">This serves as your Official Receipt.</div>
+            <div>Please keep this invoice for your records.</div>
+            <div style="margin-top: 5px;">This serves as your Customer Invoice.</div>
           </div>
           
           <div class="center qr-placeholder">
@@ -462,7 +466,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
       
       let y = 50;
       doc.setFontSize(20);
-      doc.text('PHARMACY RECEIPT', 300, y, { align: 'center' });
+      doc.text('CUSTOMER INVOICE', 300, y, { align: 'center' });
       
       y += 40;
       doc.setFontSize(10);
@@ -826,10 +830,10 @@ export function SalesPOS({ medicines, currentUser, settings }) {
             <div className="space-y-2 border-t pt-4 mb-4">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
-                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(total)}</span>
+                <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600">
-                <span>VAT (12%):</span>
+                <span>VAT:</span>
                 <span>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(tax)}</span>
               </div>
               <div className="flex justify-between text-lg font-bold border-t pt-2">

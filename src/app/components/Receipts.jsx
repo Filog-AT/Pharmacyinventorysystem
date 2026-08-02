@@ -228,9 +228,12 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     let y = 48;
     doc.setFontSize(16);
     doc.text('PharmaTrack', 40, y);
+    y += 8;
+    doc.setFontSize(10);
+    doc.text('Customer Invoice', 40, y);
     y += 22;
     doc.setFontSize(12);
-    doc.text(`Receipt ${r.id ? '#'+r.id : ''}`, 40, y);
+    doc.text(`Invoice ${r.id ? '#'+r.id : ''}`, 40, y);
     y += 16;
     doc.text(`Date: ${ts.toLocaleString()}`, 40, y);
     y += 16;

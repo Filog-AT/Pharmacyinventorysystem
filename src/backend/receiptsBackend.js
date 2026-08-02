@@ -72,7 +72,7 @@ export const buildReceiptHtml = (r, formatMoney) => {
 </head>
 <body>
   <div class="title">PharmaTrack</div>
-  <div class="subtitle">Receipt ${rid ? '#'+rid : ''} • ${label}</div>
+  <div class="subtitle">Customer Invoice ${rid ? '#'+rid : ''} • ${label}</div>
   <table>
     <thead>
       <tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr>
@@ -91,6 +91,7 @@ export const buildReceiptHtml = (r, formatMoney) => {
     ` : ''}
   </table>
   <div class="footer">Cashier: ${r.userName || 'Unknown'} • Customer: ${r.customerName || 'Walk-in'}</div>
+  <div class="footer" style="margin-top: 8px;">This serves as your Customer Invoice.</div>
 </body>
 </html>`;
 };
