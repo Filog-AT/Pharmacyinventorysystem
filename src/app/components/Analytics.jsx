@@ -311,11 +311,15 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
                 <select
                   value={selectedMedicineId}
                   onChange={(e) => setSelectedMedicineId(e.target.value)}
-                  className="px-3 py-1.5 border rounded-md text-sm bg-white w-full max-w-[200px]"
+                  className="px-3 py-1.5 border rounded-md text-sm bg-white w-full max-w-[220px]"
                 >
-                  {medicines.map(m => (
-                    <option key={m.id} value={m.id}>{m.name} ({m.strength})</option>
-                  ))}
+                  {medicines.map(m => {
+                    const brandLabel = m.brandName || m.name || 'Unknown';
+                    const strengthLabel = m.strength ? ` ${m.strength}` : '';
+                    return (
+                      <option key={m.id} value={m.id}>{brandLabel}{strengthLabel}</option>
+                    );
+                  })}
                 </select>
               </div>
             </div>

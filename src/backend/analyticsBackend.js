@@ -113,26 +113,32 @@ export const getTopBottomSold = (receipts, medicines, timeScale = 'month') => {
   filteredReceipts.forEach(r => {
     if (Array.isArray(r.items)) {
       r.items.forEach(it => {
-        // Group only by name as requested
-        const name = (it.name || '').trim().toLowerCase();
-        if (!name) return;
+        const itemName = (it.name || '').trim();
+        const itemBrand = (it.brandName || '').trim();
+        const key = (itemBrand || itemName).trim().toLowerCase();
+        if (!key) return;
         const qty = Number(it.quantity || 0);
-        medNameSales.set(name, (medNameSales.get(name) || 0) + qty);
+        medNameSales.set(key, (medNameSales.get(key) || 0) + qty);
       });
     }
   });
 
-  // Unique list of medicine names from current inventory
+  // Unique list of medicine brands from current inventory
   const uniqueNames = new Set();
   medicines.forEach(m => {
-    const name = (m.name || '').trim().toLowerCase();
-    if (name) uniqueNames.add(name);
+    const brand = (m.brandName || '').trim();
+    const key = brand ? brand.toLowerCase() : (m.name || '').trim().toLowerCase();
+    if (key) uniqueNames.add(key);
   });
 
-  const sorted = Array.from(uniqueNames).map(name => ({
-    name: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), // Capitalize for display
-    sales: medNameSales.get(name) || 0
-  })).sort((a, b) => b.sales - a.sales);
+  const sorted = Array.from(uniqueNames).map(key => {
+    const med = medicines.find(m => (m.brandName || m.name || '').trim().toLowerCase() === key);
+    const displayName = med?.brandName || med?.name || key.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return {
+      name: displayName,
+      sales: medNameSales.get(key) || 0
+    };
+  }).sort((a, b) => b.sales - a.sales);
 
   return {
     top10: sorted.slice(0, 10),
