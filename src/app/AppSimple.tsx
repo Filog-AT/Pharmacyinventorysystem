@@ -46,8 +46,16 @@ import { userService, UserProfile } from '@/services/userService';
 type CurrentUser = UserProfile | null;
 
 function AppSimple() {
-  const [currentUser, setCurrentUser] = useState<CurrentUser>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.sessionStorage.getItem('pharmacy_current_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [authLoading, setAuthLoading] = useState(false);
   const [activePage, setActivePage] = useState(() => {
     // If we're not authenticated, we should show the login page
     // The auth listener will handle setting the user once loaded
@@ -60,38 +68,49 @@ function AppSimple() {
   const [sidebarColor, setSidebarColor] = useState<string>('');
   const [contentColor, setContentColor] = useState<string>('');
 
-  // Monitor auth state
+  // Keep the signed-in user in this tab's session storage so separate tabs can
+  // maintain independent manager/staff sessions without overriding each other.
   useEffect(() => {
-    const unsubscribe = userService.onAuthChanged(async (user) => {
-      setCurrentUser(user);
-      setAuthLoading(false);
-      
-      if (user?.pharmacyId) {
-        // Fetch pharmacy details
-        try {
-          const { pharmacyService } = await import('@/services/pharmacyService');
-          const pharmacy = await pharmacyService.getPharmacy(user.pharmacyId);
-          if (pharmacy) {
-            setPharmacyLogo(pharmacy.logoUrl || '');
-            setSidebarColor(pharmacy.sidebarColor || '');
-            setContentColor(pharmacy.contentColor || '');
-            setSettings(prev => ({ 
-              ...prev, 
-              pharmacyName: pharmacy.name || user.pharmacyName || prev.pharmacyName,
-              address: pharmacy.address || '',
-              contact: pharmacy.contact || '',
-              logoUrl: pharmacy.logoUrl || '',
-              sidebarColor: pharmacy.sidebarColor || '',
-              contentColor: pharmacy.contentColor || ''
-            }));
-          }
-        } catch (err) {
-          console.error('[AppSimple] Error fetching pharmacy details:', err);
+    if (!currentUser) {
+      try {
+        window.sessionStorage.removeItem('pharmacy_current_user');
+      } catch {}
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem('pharmacy_current_user', JSON.stringify(currentUser));
+    } catch {}
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser?.pharmacyId) return;
+
+    const loadPharmacyDetails = async () => {
+      try {
+        const { pharmacyService } = await import('@/services/pharmacyService');
+        const pharmacy = await pharmacyService.getPharmacy(currentUser.pharmacyId);
+        if (pharmacy) {
+          setPharmacyLogo(pharmacy.logoUrl || '');
+          setSidebarColor(pharmacy.sidebarColor || '');
+          setContentColor(pharmacy.contentColor || '');
+          setSettings(prev => ({
+            ...prev,
+            pharmacyName: pharmacy.name || currentUser.pharmacyName || prev.pharmacyName,
+            address: pharmacy.address || '',
+            contact: pharmacy.contact || '',
+            logoUrl: pharmacy.logoUrl || '',
+            sidebarColor: pharmacy.sidebarColor || '',
+            contentColor: pharmacy.contentColor || ''
+          }));
         }
+      } catch (err) {
+        console.error('[AppSimple] Error fetching pharmacy details:', err);
       }
-    });
-    return () => unsubscribe();
-  }, []);
+    };
+
+    loadPharmacyDetails();
+  }, [currentUser?.pharmacyId, currentUser?.pharmacyName]);
 
   // Listen for theme updates from Settings
   useEffect(() => {
@@ -349,6 +368,7 @@ function AppSimple() {
   const handleLogin = (profile: UserProfile) => {
     setCurrentUser(profile);
     setActivePage('dashboard');
+    setAuthLoading(false);
     
     // Update settings with pharmacy name
     if (profile.pharmacyName) {
@@ -388,7 +408,6 @@ function AppSimple() {
         });
       } catch (e) {}
     }
-    await userService.signOut();
     setCurrentUser(null);
     setActivePage('dashboard');
   };
