@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { User, Lock, Building2, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle, Lightbulb } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle } from 'lucide-react';
 import { userService } from '@/services/userService';
 import { toast } from 'sonner';
+import heartLogo from '../../styles/heart logo.jpg';
 
 export function Login({ onLogin, pharmacyName }) {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -97,10 +98,14 @@ export function Login({ onLogin, pharmacyName }) {
     }
   };
 
+  const renderHeartLogo = (className = 'w-5 h-5') => (
+    <img src={heartLogo} alt="" className={`${className} object-contain rounded-full`} />
+  );
+
   // VERIFICATION UI
   if (verificationStep && isSignUp) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.14),_transparent_38%),linear-gradient(135deg,_#f8fbff_0%,_#f3f7fd_100%)] flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-card rounded-xl border shadow-sm p-8 text-center animate-in fade-in zoom-in duration-300">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-6">
             <Mail className="w-8 h-8 text-blue-600" />
@@ -161,12 +166,12 @@ export function Login({ onLogin, pharmacyName }) {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.24),_transparent_38%),linear-gradient(135deg,_#eef6ff_0%,_#dfeeff_50%,_#eaf4ff_100%)] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4 shadow-lg shadow-blue-200">
-            <Building2 className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-36 h-36 bg-pink-50 border border-pink-100 rounded-full mb-4 shadow-lg shadow-pink-100/70 overflow-hidden">
+            {renderHeartLogo('w-33 h-33')}
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">{pharmacyName || 'PharmaTrack'}</h1>
           <p className="text-muted-foreground">Inventory Management System</p>
@@ -226,7 +231,9 @@ export function Login({ onLogin, pharmacyName }) {
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy Name</label>
                   <div className="relative">
-                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 flex items-center justify-center">
+                      {renderHeartLogo('w-4 h-4')}
+                    </span>
                     <input
                       type="text"
                       value={pharmacyNameInput}
@@ -281,7 +288,9 @@ export function Login({ onLogin, pharmacyName }) {
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy ID</label>
                     <div className="relative">
-                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 flex items-center justify-center">
+                        {renderHeartLogo('w-4 h-4')}
+                      </span>
                       <input
                         type="text"
                         value={pharmacyIdInput}

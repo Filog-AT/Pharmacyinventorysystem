@@ -2,14 +2,64 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Lightbulb, AlertTriangle, Package, TrendingUp, CheckCircle, X } from 'lucide-react';
 import * as recommendationsBackend from '@/backend/recommendationsBackend';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/app/components/ui/pagination';
  
 export function PrescriptiveRecommendations({ medicines = [] }) {
   const today = useMemo(() => new Date(), []);
   const [showAllModal, setShowAllModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const recommendationsPerPage = 9;
  
   const recommendations = useMemo(() => {
     return recommendationsBackend.getRecommendations(medicines, today);
   }, [medicines, today]);
+
+  const totalPages = Math.max(1, Math.ceil(recommendations.length / recommendationsPerPage));
+  const previewRecommendations = useMemo(() => recommendations.slice(0, 9), [recommendations]);
+  const paginatedRecommendations = useMemo(() => {
+    const startIndex = (currentPage - 1) * recommendationsPerPage;
+    return recommendations.slice(startIndex, startIndex + recommendationsPerPage);
+  }, [currentPage, recommendations, recommendationsPerPage]);
+  const visibleRecommendations = showAllModal ? paginatedRecommendations : previewRecommendations;
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+
+    const pages = [1];
+    if (currentPage > 3) pages.push('ellipsis-start');
+
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+    for (let page = start; page <= end; page += 1) {
+      pages.push(page);
+    }
+
+    if (currentPage < totalPages - 2) pages.push('ellipsis-end');
+    pages.push(totalPages);
+    return pages;
+  }, [currentPage, totalPages]);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(Math.min(totalPages, Math.max(1, page)));
+  };
+
+  const openAllRecommendations = () => {
+    setCurrentPage(1);
+    setShowAllModal(true);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [recommendations.length]);
 
   // Handle body scroll lock
   useEffect(() => {
@@ -40,7 +90,7 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
         
         <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recommendations.slice(0, 9).map((rec) => (
+            {visibleRecommendations.map((rec) => (
               <div key={rec.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md ${
                 rec.priority === 'CRITICAL' ? 'border-red-200' : 
                 rec.priority === 'HIGH' ? 'border-orange-200' : 'border-blue-100'
@@ -113,7 +163,7 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
         </div>
 
         <button 
-          onClick={() => setShowAllModal(true)}
+          onClick={openAllRecommendations}
           className="w-full p-4 text-sm font-black text-yellow-700 hover:bg-yellow-50 border-t border-yellow-100 transition-all bg-white mt-auto flex items-center justify-center gap-2 group"
         >
           VIEW ALL RECOMMENDATIONS
@@ -147,7 +197,7 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {recommendations.map((rec) => (
+                {visibleRecommendations.map((rec) => (
                   <div key={rec.id} className={`bg-white rounded-xl border-2 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md ${
                     rec.priority === 'CRITICAL' ? 'border-red-200' : 
                     rec.priority === 'HIGH' ? 'border-orange-200' : 'border-blue-100'
@@ -219,6 +269,57 @@ export function PrescriptiveRecommendations({ medicines = [] }) {
                 </div>
               )}
             </div>
+
+            {totalPages > 1 && (
+              <div className="border-t border-gray-200 bg-white px-6 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm font-semibold text-gray-600">
+                    Showing {((currentPage - 1) * recommendationsPerPage) + 1}-{Math.min(currentPage * recommendationsPerPage, recommendations.length)} of {recommendations.length} recommendations
+                  </div>
+                  <Pagination>
+                    <PaginationContent className="flex-wrap rounded-full border border-yellow-100 bg-yellow-50/70 p-1.5">
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={(event) => {
+                            event.preventDefault();
+                            handlePageChange(currentPage - 1);
+                          }}
+                          className={`rounded-full ${currentPage === 1 ? 'pointer-events-none opacity-50' : 'hover:bg-white'}`}
+                        />
+                      </PaginationItem>
+                      {pageNumbers.map((page, index) => (
+                        <PaginationItem key={`${page}-${index}`}>
+                          {page === 'ellipsis-start' || page === 'ellipsis-end' ? (
+                            <span className="px-2 text-sm font-semibold text-gray-400">…</span>
+                          ) : (
+                            <PaginationLink
+                              href="#"
+                              isActive={page === currentPage}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                handlePageChange(page);
+                              }}
+                              className={`min-w-9 rounded-full ${page === currentPage ? 'bg-yellow-600 text-white hover:bg-yellow-700' : 'text-gray-700 hover:bg-white'}`}
+                            >
+                              {page}
+                            </PaginationLink>
+                          )}
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={(event) => {
+                            event.preventDefault();
+                            handlePageChange(currentPage + 1);
+                          }}
+                          className={`rounded-full ${currentPage === totalPages ? 'pointer-events-none opacity-50' : 'hover:bg-white'}`}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

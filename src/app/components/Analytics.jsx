@@ -7,12 +7,10 @@ import * as analyticsBackend from '@/backend/analyticsBackend';
 
 export function Analytics({ medicines = [], categories = [], currentUser }) {
   const [receipts, setReceipts] = useState([]);
-  const [timeScale, setTimeScale] = useState('month'); // weekly|month|yearly
-  const [topBottomTimeScale, setTopBottomTimeScale] = useState('month'); // weekly|month|yearly
-
+  const [timeScale, setTimeScale] = useState('month'); 
+  const [topBottomTimeScale, setTopBottomTimeScale] = useState('month'); 
   const [topSoldTimeScale, setTopSoldTimeScale] = useState('month');
   const [leastSoldTimeScale, setLeastSoldTimeScale] = useState('month');
-
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
@@ -81,7 +79,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
       const svc = await loadReceiptService();
       try {
         if (svc) {
-          // Pass 0 to remove limit and get all receipts for full historical analysis
           const data = await svc.getReceipts(currentUser.pharmacyId, 0);
           setReceipts(data || []);
         }
@@ -176,7 +173,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
     }
     return null;
   };
-  // Usage Trend and Forecast for selected medicine
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -194,9 +190,8 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
         const bucketKey = (d) => {
           const dt = new Date(d);
           if (timeScale === 'week') {
-            // Use week start date (Monday) as label YYYY-MM-DD
             const weekStart = new Date(dt);
-            const day = weekStart.getDay() || 7; // Sunday=7
+            const day = weekStart.getDay() || 7;
             weekStart.setDate(weekStart.getDate() - (day - 1));
             weekStart.setHours(0,0,0,0);
             const y = weekStart.getFullYear();
@@ -236,7 +231,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
           series = series.slice(-12);
         }
         setSelectedSeries(series);
-        // Predictive metrics using last 30 days moving average
         const today = new Date();
         const last30Cutoff = new Date(today); last30Cutoff.setDate(today.getDate()-30);
         const last30 = (sales || []).filter(rec => {
@@ -269,25 +263,21 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
 
   return (
     <div className="space-y-8">
-      {/* Header section */}
       <div>
         <h1 className="text-2xl font-bold mb-2 text-gray-900">Analytics</h1>
         <p className="text-sm text-muted-foreground">Monitor performance, demand patterns, and prescriptive recommendations.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        {/* Enlarge Recommendations Card */}
         <div>
           <PrescriptiveRecommendations medicines={medicines} />
         </div>
       </div>
 
-      {/* Usage & Sales Summary */}
       <section className="space-y-6">
         <h2 className="text-xl font-semibold">Usage & Sales Summary</h2>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Medicine Sales (Styled like Staff Dashboard Sales Performance) */}
           <div className="bg-white p-6 rounded-xl border shadow-sm lg:col-span-2">
             <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
               <div>
@@ -455,8 +445,7 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
                       leastSoldTimeScale === ts.id 
                         ? 'bg-white shadow-sm text-rose-700 font-bold' 
                         : 'text-rose-500 hover:text-rose-700'
-                    }`}
-                  >
+                    }`}>
                     {ts.label}
                   </button>
                 ))}
@@ -509,7 +498,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
         </div>
       </section>
 
-      {/* Inventory Status */}
       <section className="space-y-4">
         <h2 className="text-xl font-semibold">Inventory Status</h2>
         <div className="bg-card rounded-lg border p-4">
@@ -541,7 +529,6 @@ export function Analytics({ medicines = [], categories = [], currentUser }) {
         </div>
       </section>
 
-      {/* Forecasting removed */}
     </div>
   );
 }

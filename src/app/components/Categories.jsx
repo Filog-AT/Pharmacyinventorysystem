@@ -9,7 +9,6 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Ensure arrays
   const safeMedicines = Array.isArray(medicines) ? medicines : [];
   const safeCategories = Array.isArray(categories) ? categories : [];
 
@@ -33,7 +32,6 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
     }
   };
 
-  // View medicines in a category
   if (selectedCategory) {
     const categoryData = categoryStats.find(c => c.name === selectedCategory);
     
@@ -56,7 +54,6 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
               <MedicineCard
                 key={medicine.id}
                 medicine={medicine}
-                // Read-only view in categories for now, or pass handlers if needed
                 onEdit={() => {}} 
                 onDelete={() => {}}
               />
@@ -80,14 +77,12 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
 
   return (
     <div>
-      {/* Submitting Overlay */}
       {submitting && (
         <div className="fixed inset-0 bg-white/70 backdrop-blur-[1px] z-[100] flex flex-col items-center justify-center animate-in fade-in duration-200">
           <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
           <p className="text-gray-900 font-bold">Creating Category...</p>
         </div>
       )}
-      {/* Header */}
       <div className="mb-6 flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Categories</h1>
@@ -102,7 +97,6 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
         </button>
       </div>
 
-      {/* Category Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {categoryStats.map(category => (
           <div key={category.name} className="bg-white rounded-lg border-2 border-gray-200 p-6 hover:shadow-lg transition-shadow">
@@ -148,7 +142,6 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
         ))}
       </div>
 
-      {/* Empty State */}
       {categoryStats.length === 0 && (
         <div className="bg-white rounded-lg shadow-sm p-12 text-center">
           <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -157,7 +150,6 @@ export function Categories({ medicines = [], categories = [], onAddCategory }) {
         </div>
       )}
 
-      {/* Add Category Modal */}
       {showAddForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6">

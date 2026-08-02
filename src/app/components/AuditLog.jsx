@@ -3,6 +3,14 @@ import { Calendar, Filter, Download, Eye, EyeOff, User, ChevronDown, ChevronUp, 
 import { auditService } from '@/services/auditService';
 import { receiptService } from '@/services/receiptService';
 import * as auditBackend from '@/backend/auditBackend';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/app/components/ui/pagination';
 
 const actionColors = {
   MEDICINE_ADD: { bg: 'bg-green-100', text: 'text-green-700', label: 'Medicine Added', icon: Box },
@@ -29,6 +37,8 @@ export function AuditLog({ currentUser, settings }) {
   const [clearing, setClearing] = useState(false);
   const [viewMode, setViewMode] = useState('audit'); // 'audit' or 'receipts'
   const [expandedSessions, setExpandedExpandedSessions] = useState({});
+  const [receiptPage, setReceiptPage] = useState(1);
+  const receiptsPerPage = 6;
   const [filters, setFilters] = useState({
     action: '',
     userId: '',
@@ -96,6 +106,10 @@ export function AuditLog({ currentUser, settings }) {
       filterReceipts();
     }
   }, [logs, receipts, filters, viewMode]);
+
+  useEffect(() => {
+    setReceiptPage(1);
+  }, [viewMode, filters.searchTerm, filters.startDate, filters.endDate]);
 
   const loadLogs = async () => {
     if (!currentUser?.pharmacyId) return;
@@ -199,6 +213,7 @@ export function AuditLog({ currentUser, settings }) {
     }
 
     setFilteredReceipts(filtered);
+    setReceiptPage(1);
   };
 
   const downloadAllReceiptsCSV = () => {
@@ -464,6 +479,30 @@ export function AuditLog({ currentUser, settings }) {
   };
 
   const formatMoney = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+  const totalReceiptPages = Math.max(1, Math.ceil(filteredReceipts.length / receiptsPerPage));
+  const paginatedReceipts = useMemo(() => {
+    const startIndex = (receiptPage - 1) * receiptsPerPage;
+    return filteredReceipts.slice(startIndex, startIndex + receiptsPerPage);
+  }, [filteredReceipts, receiptPage, receiptsPerPage]);
+
+  const receiptPageNumbers = useMemo(() => {
+    if (totalReceiptPages <= 5) {
+      return Array.from({ length: totalReceiptPages }, (_, index) => index + 1);
+    }
+
+    const pages = [];
+    if (receiptPage > 3) pages.push(1, 'ellipsis-start');
+
+    const start = Math.max(2, receiptPage - 1);
+    const end = Math.min(totalReceiptPages - 1, receiptPage + 1);
+    for (let page = start; page <= end; page += 1) {
+      pages.push(page);
+    }
+
+    if (receiptPage < totalReceiptPages - 2) pages.push('ellipsis-end');
+    pages.push(totalReceiptPages);
+    return pages;
+  }, [receiptPage, totalReceiptPages]);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -791,14 +830,15 @@ export function AuditLog({ currentUser, settings }) {
         </div>
       ) : (
         /* Enhanced Receipts View */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredReceipts.length === 0 ? (
-            <div className="col-span-full p-20 text-center bg-white rounded-3xl border-2 border-dashed border-gray-100">
-              <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-              <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">No receipts found</p>
-            </div>
-          ) : (
-            filteredReceipts.map((r) => {
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredReceipts.length === 0 ? (
+              <div className="col-span-full p-20 text-center bg-white rounded-3xl border-2 border-dashed border-gray-100">
+                <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">No receipts found</p>
+              </div>
+            ) : (
+              paginatedReceipts.map((r) => {
               const ts = r.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
               const label = ts.toLocaleString();
               const items = Array.isArray(r.items) ? r.items : [];
@@ -884,7 +924,61 @@ export function AuditLog({ currentUser, settings }) {
                   </div>
                 </div>
               );
-            })
+              })
+            )}
+          </div>
+
+          {totalReceiptPages > 1 && (
+            <div className="flex justify-center">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm font-semibold text-emerald-700">
+                    Showing {(receiptPage - 1) * receiptsPerPage + 1}-{Math.min(receiptPage * receiptsPerPage, filteredReceipts.length)} of {filteredReceipts.length} receipts
+                  </div>
+                  <Pagination>
+                    <PaginationContent className="flex-wrap rounded-full border border-emerald-200 bg-white p-1.5 shadow-sm">
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setReceiptPage((page) => Math.max(1, page - 1));
+                          }}
+                          className={`rounded-full ${receiptPage === 1 ? 'pointer-events-none opacity-50' : 'hover:bg-emerald-50'}`}
+                        />
+                      </PaginationItem>
+                      {receiptPageNumbers.map((page, index) => (
+                        <PaginationItem key={`${page}-${index}`}>
+                          {page === 'ellipsis-start' || page === 'ellipsis-end' ? (
+                            <span className="px-2 text-sm font-semibold text-gray-400">…</span>
+                          ) : (
+                            <PaginationLink
+                              href="#"
+                              isActive={page === receiptPage}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                setReceiptPage(page);
+                              }}
+                              className={`min-w-9 rounded-full ${page === receiptPage ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'text-gray-700 hover:bg-emerald-50'}`}
+                            >
+                              {page}
+                            </PaginationLink>
+                          )}
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setReceiptPage((page) => Math.min(totalReceiptPages, page + 1));
+                          }}
+                          className={`rounded-full ${receiptPage === totalReceiptPages ? 'pointer-events-none opacity-50' : 'hover:bg-emerald-50'}`}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
