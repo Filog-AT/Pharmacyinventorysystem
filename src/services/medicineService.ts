@@ -10,6 +10,7 @@ import {
   QueryConstraint,
   limit as firestoreLimit,
   Timestamp,
+  deleteField,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { Medicine, Batch } from '@/store/medicineStore';
@@ -241,11 +242,17 @@ export const medicineService = {
     }
   },
 
-  // Update a medicine
+  // Update a medicine — automatically replaces `undefined` values with deleteField()
+  // so Firestore doesn't reject the payload.
   async updateMedicine(pharmacyId: string, categoryId: string, id: string, medicineData: Partial<Medicine>): Promise<void> {
     try {
       const medicineRef = this.getMedicineRef(pharmacyId, categoryId, id);
-      await updateDoc(medicineRef, medicineData);
+      // Replace any undefined values with deleteField() sentinel
+      const sanitized: Record<string, any> = {};
+      for (const [k, v] of Object.entries(medicineData as Record<string, any>)) {
+        sanitized[k] = v === undefined ? deleteField() : v;
+      }
+      await updateDoc(medicineRef, sanitized);
     } catch (error) {
       console.error('Error updating medicine:', error);
       throw error;

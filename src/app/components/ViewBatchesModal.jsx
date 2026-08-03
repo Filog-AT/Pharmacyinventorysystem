@@ -1,10 +1,10 @@
-import { X, Trash2, Calendar, Package, Tag, Pencil, AlertTriangle } from 'lucide-react';
+import { X, Trash2, Calendar, Package, Tag, Pencil, AlertTriangle, Archive } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, BarChart, Bar, Cell } from 'recharts';
 import { medicineService } from '@/services/medicineService';
 import * as viewBatchesBackend from '@/backend/viewBatchesBackend';
 
-export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch, onUpdateBatch }) {
+export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch, onArchiveBatch, onUpdateBatch }) {
   const [editingBatch, setEditingBatch] = useState(null);
   const [batchToDelete, setBatchToDelete] = useState(null);
   const [editFormData, setEditFormData] = useState({
@@ -302,10 +302,10 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
                               </button>
                               <button
                                 onClick={() => setBatchToDelete(batch)}
-                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                title="Delete Batch"
+                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+                                title="Archive Batch"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Archive className="w-4 h-4" />
                               </button>
                             </div>
                           </td>
@@ -347,29 +347,35 @@ export function ViewBatchesModal({ medicine, currentUser, onClose, onDeleteBatch
         </div>
       </div>
 
-      {/* Better Delete Alert Modal */}
+      {/* Archive Batch Confirmation Modal */}
       {batchToDelete && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex flex-col items-center text-center">
-              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-6">
-                <AlertTriangle className="w-8 h-8" />
+              <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mb-6">
+                <Archive className="w-8 h-8" />
               </div>
-              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-2">Delete Batch?</h3>
+              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-2">Archive Batch?</h3>
               <p className="text-gray-500 text-sm font-medium leading-relaxed mb-8">
-                Are you sure you want to delete batch <span className="text-gray-900 font-bold">#{batchToDelete.batchNumber}</span>? 
-                This action cannot be undone and will remove <span className="text-gray-900 font-bold">{batchToDelete.quantity} {medicine.unit}</span> from inventory.
+                Archive batch <span className="text-gray-900 font-bold">#{batchToDelete.batchNumber}</span>?{' '}
+                It will be moved to the archive with{' '}
+                <span className="text-gray-900 font-bold">{batchToDelete.quantity} {medicine.unit}</span> remaining.
+                The batch record is preserved for history.
               </p>
               
               <div className="flex flex-col w-full gap-3">
                 <button
                   onClick={() => {
-                    onDeleteBatch(medicine.id, batchToDelete.id);
+                    if (onArchiveBatch) {
+                      onArchiveBatch(batchToDelete);
+                    } else {
+                      onDeleteBatch(medicine.id, batchToDelete.id);
+                    }
                     setBatchToDelete(null);
                   }}
-                  className="w-full bg-red-600 text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-100 transform hover:-translate-y-0.5 active:translate-y-0"
+                  className="w-full bg-amber-600 text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-amber-700 transition-all shadow-lg shadow-amber-100 transform hover:-translate-y-0.5 active:translate-y-0"
                 >
-                  Confirm Delete
+                  Archive Batch
                 </button>
                 <button
                   onClick={() => setBatchToDelete(null)}

@@ -104,7 +104,7 @@ export function Inventory({
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [archiveFilter, setArchiveFilter] = useState('all');
+  const [archiveFilter, setArchiveFilter] = useState('brands');
   const [archiveSearch, setArchiveSearch] = useState('');
   const [showArchiveView, setShowArchiveView] = useState(false);
   const [selectedArchiveItem, setSelectedArchiveItem] = useState(null);
@@ -234,29 +234,40 @@ export function Inventory({
     }
   };
 
-  const handleArchiveBatch = async (medicine, batch, reason = 'Manual') => {
+  const handleArchiveBatch = async (medicine, batch, reason = null) => {
     if (!medicine || !batch) return;
     const now = new Date().toISOString();
+
+    // Auto-detect reason if not provided
+    let archiveReason = reason;
+    if (!archiveReason) {
+      const isExpired = batch.expiryDate && new Date(batch.expiryDate) < new Date();
+      const isSoldOut = Number(batch.quantity || 0) === 0;
+      if (isExpired) archiveReason = 'Expired';
+      else if (isSoldOut) archiveReason = 'Out of Stock';
+      else archiveReason = 'Manual';
+    }
+
     const archivedBatch = {
       ...batch,
       isArchived: true,
       archivedAt: now,
-      archiveReason: reason,
+      archiveReason,
       quantity: 0,
       depletedAt: batch.depletedAt || now,
     };
     const updatedActiveBatches = (medicine.batches || []).filter((item) => item.id !== batch.id);
     const updatedArchivedBatches = [...(medicine.archivedBatches || []), archivedBatch];
+    const newTotal = updatedActiveBatches.reduce((sum, b) => sum + Number(b.quantity || 0), 0);
     try {
       await onUpdateMedicine?.(medicine.id, {
         archivedBatches: updatedArchivedBatches,
         batches: updatedActiveBatches,
-        totalQuantity: 0,
-        archivedAt: now,
-        archiveReason: reason,
-        isArchived: false,
+        totalQuantity: newTotal,
+        pharmacyId: medicine.pharmacyId,
+        categoryId: medicine.categoryId,
       });
-      toast.success(`${medicine.name} archived successfully`);
+      toast.success(`Batch archived (${archiveReason})`);
     } catch (error) {
       console.error(error);
       toast.error('Failed to archive batch');
@@ -265,7 +276,14 @@ export function Inventory({
 
   const handleRestoreArchivedBatch = async (medicine, batch) => {
     if (!medicine || !batch) return;
-    const restoredBatch = { ...batch, isArchived: false, archivedAt: undefined, archiveReason: undefined, quantity: batch.quantity || 0 };
+    // Build restored batch — use delete (not undefined) so Firestore doesn't reject nested objects
+    const restoredBatch = { ...batch };
+    restoredBatch.isArchived = false;
+    restoredBatch.quantity = Number(batch.initialQuantity || batch.quantity || 0);
+    delete restoredBatch.archivedAt;
+    delete restoredBatch.archiveReason;
+    delete restoredBatch.depletedAt;
+
     const updatedArchivedBatches = (medicine.archivedBatches || []).filter((item) => item.id !== batch.id);
     const updatedActiveBatches = [...(medicine.batches || []), restoredBatch];
     try {
@@ -284,25 +302,60 @@ export function Inventory({
   const handleRestoreArchivedMedicine = async (medicine) => {
     if (!medicine) return;
     try {
-      const restoredBatches = (medicine.archivedBatches || []).map((batch) => ({
-        ...batch,
-        isArchived: false,
-        archivedAt: undefined,
-        archiveReason: undefined,
-        // Restore original quantity — use initialQuantity if available, otherwise keep existing
-        quantity: Number(batch.initialQuantity || batch.quantity || 0),
-      }));
-      await onUpdateMedicine?.(medicine.id, {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Only restore batches that were archived when the brand was deleted AND are not expired
+      // Expired batches and individually-archived batches stay in archivedBatches
+      const batchesToRestore = (medicine.archivedBatches || []).filter(b => {
+        if (b.archiveReason !== 'Brand deleted') return false;
+        if (!b.expiryDate) return true;
+        const exp = new Date(b.expiryDate);
+        exp.setHours(0, 0, 0, 0);
+        return exp >= today; // skip expired
+      });
+
+      const batchesToKeepArchived = (medicine.archivedBatches || []).filter(b => {
+        if (b.archiveReason !== 'Brand deleted') return true; // keep individually archived
+        if (!b.expiryDate) return false;
+        const exp = new Date(b.expiryDate);
+        exp.setHours(0, 0, 0, 0);
+        return exp < today; // keep expired brand-deleted batches in archive
+      });
+
+      // Clean restored batch objects — remove archive fields and any undefined values
+      const restoredBatches = batchesToRestore.map((batch) => {
+        const b = { ...batch };
+        b.isArchived = false;
+        b.quantity = Number(batch.initialQuantity || batch.quantity || 0);
+        // Delete archive-specific keys entirely so no undefined reaches Firestore
+        delete b.archivedAt;
+        delete b.archiveReason;
+        delete b.depletedAt;
+        return b;
+      });
+
+      const payload = {
         batches: restoredBatches,
-        archivedBatches: [],
+        archivedBatches: batchesToKeepArchived,
         totalQuantity: restoredBatches.reduce((sum, b) => sum + Number(b.quantity || 0), 0),
         isArchived: false,
-        archivedAt: undefined,
+        archivedAt: undefined,   // updateMedicine sanitizer turns this into deleteField()
         archiveReason: undefined,
-      });
-      toast.success(`${medicine.name} restored successfully`);
+        pharmacyId: medicine.pharmacyId,
+        categoryId: medicine.categoryId,
+      };
+      await onUpdateMedicine?.(medicine.id, payload);
+
+      const restoredCount = restoredBatches.length;
+      const skippedCount = (medicine.archivedBatches || []).filter(b => b.archiveReason === 'Brand deleted').length - restoredCount;
+      if (skippedCount > 0) {
+        toast.success(`${medicine.name} restored — ${restoredCount} batch${restoredCount !== 1 ? 'es' : ''} active, ${skippedCount} expired batch${skippedCount !== 1 ? 'es' : ''} kept in archive`);
+      } else {
+        toast.success(`${medicine.name} restored to inventory`);
+      }
     } catch (error) {
-      console.error(error);
+      console.error('[Inventory] Restore brand failed:', error);
       toast.error('Failed to restore brand');
     }
   };
@@ -322,6 +375,30 @@ export function Inventory({
 
   const handleDeleteBatch = (medicineId, batchId) => {
     onDeleteBatch?.(medicineId, batchId);
+  };
+
+  // DEBUG: Clear all archive data from every medicine in the store
+  const handleClearArchive = async () => {
+    if (!window.confirm('DEBUG: Clear ALL archive data from every medicine? This removes isArchived, archivedBatches, archivedAt, archiveReason fields.')) return;
+    let count = 0;
+    for (const m of safeMedicines) {
+      const hasArchive = m.isArchived || (m.archivedBatches && m.archivedBatches.length > 0);
+      if (!hasArchive) continue;
+      try {
+        await onUpdateMedicine?.(m.id, {
+          isArchived: false,
+          archivedAt: undefined,
+          archiveReason: undefined,
+          archivedBatches: [],
+          pharmacyId: m.pharmacyId,
+          categoryId: m.categoryId,
+        });
+        count++;
+      } catch (err) {
+        console.error('[Inventory] Failed to clear archive for', m.id, err);
+      }
+    }
+    toast.success(`Archive cleared — reset ${count} medicine(s)`);
   };
 
   return (
@@ -652,10 +729,10 @@ export function Inventory({
                                                 </button>
                                                 <button
                                                   onClick={() => setDeleteModal({ isOpen: true, id: v.id, name: `${v.name} (${v.dosageForm} ${v.strength})` })}
-                                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                  title="Delete Variation"
+                                                  className="p-1.5 text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                  title="Archive Brand"
                                                 >
-                                                  <Trash2 className="w-4 h-4" />
+                                                  <Archive className="w-4 h-4" />
                                                 </button>
                                               </div>
                                             </td>
@@ -691,9 +768,19 @@ export function Inventory({
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5">Archived brands and inactive batches — restore anytime.</p>
               </div>
-              <button onClick={() => setShowArchiveView(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleClearArchive}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-700 text-xs font-bold hover:bg-red-200 transition-colors border border-red-200"
+                  title="DEBUG: Clear all archive data"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear Archive (Debug)
+                </button>
+                <button onClick={() => setShowArchiveView(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Tab bar + Search */}
@@ -911,7 +998,14 @@ export function Inventory({
                               </td>
                               <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{batch.archivedAt ? new Date(batch.archivedAt).toLocaleDateString() : '—'}</td>
                               <td className="px-4 py-3 text-right">
-                                {!medicine.isArchived && (
+                                {medicine.isArchived ? (
+                                  <span className="text-xs text-gray-400 italic">Brand archived</span>
+                                ) : isExpired ? (
+                                  <span className="text-xs text-red-400 italic flex items-center gap-1 justify-end">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-300 flex-shrink-0" />
+                                    Expired — cannot restore
+                                  </span>
+                                ) : (
                                   <button
                                     onClick={() => handleRestoreArchivedBatch(medicine, batch)}
                                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 text-xs font-semibold hover:bg-emerald-100 transition-colors ml-auto"
@@ -919,9 +1013,6 @@ export function Inventory({
                                     <RotateCcw className="w-3 h-3" />
                                     Restore
                                   </button>
-                                )}
-                                {medicine.isArchived && (
-                                  <span className="text-xs text-gray-400 italic">Brand archived</span>
                                 )}
                               </td>
                             </tr>
@@ -1019,6 +1110,7 @@ export function Inventory({
           currentUser={currentUser}
           onClose={() => setViewingMedicine(null)}
           onDeleteBatch={handleDeleteBatchLocal}
+          onArchiveBatch={(batch) => handleArchiveBatch(viewingMedicine, batch)}
           onUpdateBatch={handleUpdateBatchLocal}
         />
       )}

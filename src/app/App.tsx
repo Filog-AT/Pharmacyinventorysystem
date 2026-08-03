@@ -189,13 +189,19 @@ function App() {
       const pharmacyId = medicineData.pharmacyId || existing?.pharmacyId || currentUser?.pharmacyId;
       const categoryId = medicineData.categoryId || existing?.categoryId;
       if (!pharmacyId || !categoryId) {
-        console.error('[App] handleUpdateMedicine: missing pharmacyId or categoryId', { pharmacyId, categoryId, id });
+        console.error('[App] handleUpdateMedicine: missing pharmacyId or categoryId', { pharmacyId, categoryId, id, existingFound: !!existing });
         setError('Failed to update medicine — missing pharmacy/category context');
         return;
       }
-      await medicineService.updateMedicine(pharmacyId, categoryId, id, medicineData);
-      const updatedMedicines = await medicineService.getMedicines(pharmacyId);
-      setMedicines(updatedMedicines);
+      // Strip routing keys before sending to Firestore
+      const { pharmacyId: _p, categoryId: _c, ...cleanData } = medicineData;
+      await medicineService.updateMedicine(pharmacyId, categoryId, id, cleanData);
+      try {
+        const updatedMedicines = await medicineService.getMedicines(pharmacyId);
+        setMedicines(updatedMedicines);
+      } catch (reloadErr) {
+        console.warn('[App] getMedicines after update failed, store may be stale:', reloadErr);
+      }
     } catch (error) {
       console.error('Failed to update medicine:', error);
       setError('Failed to update medicine');

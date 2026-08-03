@@ -123,6 +123,14 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
     setReceiptPage(1);
   }, [viewMode, filters.searchTerm, filters.startDate, filters.endDate]);
 
+  // Re-run archive whenever the period changes while the toggle is enabled
+  useEffect(() => {
+    if (autoArchiveEnabled && !autoArchiving) {
+      runAutoArchive();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [archivePeriodMonths]);
+
   const loadLogs = async () => {
     if (!currentUser?.pharmacyId) return;
     setLoading(true);
