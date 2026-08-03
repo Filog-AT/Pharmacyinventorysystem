@@ -12,6 +12,10 @@ export interface Batch {
   blistersPerBox: number;
   unitsPerBlister: number;
   createdAt: string;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
+  depletedAt?: string;
 }
 
 export interface Medicine {
@@ -26,8 +30,12 @@ export interface Medicine {
   minStockLevel: number;
   price: number; // Selling price per base unit
   batches: Batch[];
+  archivedBatches?: Batch[];
   totalQuantity: number; // Sum of all NON-EXPIRED batch quantities
   createdAt: string;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
   // Default values for variations/batches
   defaultBlistersPerBox?: number;
   defaultUnitsPerBlister?: number;

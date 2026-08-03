@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { LayoutDashboard, FolderTree, Users, FileText, Bell, Settings as SettingsIcon, Menu, X, LogOut, UserCircle, ShoppingCart, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Login } from './components/Login';
@@ -18,6 +18,7 @@ import { SalesPOS } from './components/SalesPOS';
 import { Receipts } from './components/Receipts';
 import { auditService } from '@/services/auditService';
 import { Toaster, toast } from '@/app/components/ui/sonner';
+import { shouldAutoArchiveBatch } from '@/backend/archiveBackend';
 
 // Import Firebase services (will load async)
 let medicineService: any = null;
@@ -64,6 +65,7 @@ function AppSimple() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [medicines, setMedicines] = useState<any[]>([]);
+  const autoArchiveHandledRef = useRef<Set<string>>(new Set());
   const [pharmacyLogo, setPharmacyLogo] = useState<string>('');
   const [sidebarColor, setSidebarColor] = useState<string>('');
   const [contentColor, setContentColor] = useState<string>('');
@@ -215,6 +217,39 @@ function AppSimple() {
   // Language removed from settings; keep browser default
 
   // Load categories from Firestore in background
+  useEffect(() => {
+    if (!currentUser?.pharmacyId || medicines.length === 0) return;
+
+    const eligible = medicines.flatMap((medicine: any) => {
+      return (medicine?.batches || [])
+        .filter((batch: any) => shouldAutoArchiveBatch(batch))
+        .map((batch: any) => ({ medicineId: medicine.id, medicine, batch }));
+    });
+
+    const pending = eligible.filter((item) => !autoArchiveHandledRef.current.has(`${item.medicineId}-${item.batch.id}`));
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    const runAutoArchive = async () => {
+      for (const item of pending) {
+        if (cancelled) break;
+        const key = `${item.medicineId}-${item.batch.id}`;
+        if (autoArchiveHandledRef.current.has(key)) continue;
+        try {
+          await archiveBatch(item.medicineId, item.batch, 'Out of Stock / Retention Period');
+          autoArchiveHandledRef.current.add(key);
+        } catch (error) {
+          console.warn('[AppSimple] Auto-archive failed:', error);
+        }
+      }
+    };
+
+    void runAutoArchive();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.pharmacyId, medicines]);
+
   useEffect(() => {
     if (!currentUser?.pharmacyId) return;
     const syncCategories = async () => {
@@ -608,136 +643,277 @@ function AppSimple() {
   };
 
   const handleUpdateMedicine = async (id: string, medicineData: any) => {
+    if (!currentUser?.pharmacyId) return false;
+    try {
+      const services = await loadFirebaseAsync();
+      if (!services?.medicineService) throw new Error('Medicine service unavailable');
+
+      const medicine = medicines.find(m => m.id === id);
+      if (!medicine) throw new Error('Medicine not found');
+
+      const oldPrice = Number(medicine.price || 0);
+      const newPrice = Number(medicineData.price || 0);
+      const isPriceUpdate = oldPrice !== newPrice;
+
+      await services.medicineService.updateMedicine(
+        currentUser.pharmacyId,
+        medicine.categoryId,
+        id,
+        medicineData
+      );
+      
+      const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
+      setMedicines(updated || []);
+      
+      await auditService.logAction(currentUser.pharmacyId, {
+        userId: currentUser.uid,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        action: isPriceUpdate ? 'UPDATE_PRICE' : 'UPDATE',
+        entityType: 'medicine',
+        entityName: medicine.name,
+        details: { 
+          id, 
+          ...medicineData,
+          priceChanged: isPriceUpdate,
+          oldPrice,
+          newPrice
+        }
+      });
+
+      return true;
+    } catch (error: any) {
+      console.error('Error updating medicine:', error);
+      throw error;
+    }
+  };
+
+  const archiveMedicine = async (id: string, reason = 'Discontinued / Deleted') => {
     if (!currentUser?.pharmacyId) return;
     try {
       const services = await loadFirebaseAsync();
       if (services?.medicineService) {
-        const medicine = medicines.find(m => m.id === id);
+        const medicine = medicines.find((m: any) => m.id === id);
         if (!medicine) throw new Error('Medicine not found');
 
-        const oldPrice = Number(medicine.price || 0);
-        const newPrice = Number(medicineData.price || 0);
-        const isPriceUpdate = oldPrice !== newPrice;
+        const now = new Date().toISOString();
+        const archivedBatches = (medicine.batches || []).map((batch: any) => ({
+          ...batch,
+          isArchived: true,
+          archivedAt: now,
+          archiveReason: reason,
+          quantity: 0,
+          depletedAt: batch.depletedAt || now,
+        }));
+
+        const archivedMedicine = {
+          ...medicine,
+          batches: [],
+          archivedBatches: [...(medicine.archivedBatches || []), ...archivedBatches],
+          totalQuantity: 0,
+          isArchived: true,
+          archivedAt: now,
+          archiveReason: reason,
+        };
 
         await services.medicineService.updateMedicine(
           currentUser.pharmacyId,
           medicine.categoryId,
           id,
-          medicineData
+          archivedMedicine
         );
-        
-        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
-        setMedicines(updated || []);
-        
+
+        setMedicines((prev: any[]) => prev.map((m: any) => (m.id === id ? archivedMedicine : m)));
+
         await auditService.logAction(currentUser.pharmacyId, {
           userId: currentUser.uid,
           userName: currentUser.name,
           userRole: currentUser.role,
-          action: isPriceUpdate ? 'UPDATE_PRICE' : 'UPDATE',
+          action: 'MEDICINE_ARCHIVE',
           entityType: 'medicine',
           entityName: medicine.name,
-          details: { 
-            id, 
-            ...medicineData,
-            priceChanged: isPriceUpdate,
-            oldPrice,
-            newPrice
-          }
+          details: { id, reason, archivedBatchCount: archivedBatches.length }
         });
+
+        toast.success(`${medicine.name} archived successfully`);
       }
-    } catch (error: any) {
-      console.error('Error updating medicine:', error);
+    } catch (error) {
+      console.error('Error archiving medicine:', error);
+      toast.error('Failed to archive medicine');
     }
   };
 
-  const performDeleteMedicine = async (id: string) => {
+  const restoreArchivedMedicine = async (id: string) => {
     if (!currentUser?.pharmacyId) return;
     try {
       const services = await loadFirebaseAsync();
       if (services?.medicineService) {
-        const medicine = medicines.find(m => m.id === id);
+        const medicine = medicines.find((m: any) => m.id === id);
         if (!medicine) throw new Error('Medicine not found');
 
-        await services.medicineService.deleteMedicine(
+        const restoredBatches = (medicine.archivedBatches || []).map((batch: any) => ({
+          ...batch,
+          isArchived: false,
+          archivedAt: undefined,
+          archiveReason: undefined,
+          quantity: Number(batch.quantity || 0) > 0 ? Number(batch.quantity || 0) : 0,
+        }));
+
+        const restoredMedicine = {
+          ...medicine,
+          batches: restoredBatches,
+          archivedBatches: [],
+          totalQuantity: restoredBatches.reduce((sum: number, batch: any) => sum + Number(batch.quantity || 0), 0),
+          isArchived: false,
+          archivedAt: undefined,
+          archiveReason: undefined,
+        };
+
+        await services.medicineService.updateMedicine(
           currentUser.pharmacyId,
           medicine.categoryId,
-          id
+          id,
+          restoredMedicine
         );
-        
-        const updated = await services.medicineService.getMedicines(currentUser.pharmacyId);
-        setMedicines(updated || []);
-        
+
+        setMedicines((prev: any[]) => prev.map((m: any) => (m.id === id ? restoredMedicine : m)));
+
         await auditService.logAction(currentUser.pharmacyId, {
           userId: currentUser.uid,
           userName: currentUser.name,
           userRole: currentUser.role,
-          action: 'DELETE',
+          action: 'MEDICINE_RESTORE',
           entityType: 'medicine',
           entityName: medicine.name,
           details: { id }
         });
+
+        toast.success(`${medicine.name} restored successfully`);
       }
     } catch (error) {
-      console.error('Error deleting medicine:', error);
+      console.error('Error restoring medicine:', error);
+      toast.error('Failed to restore medicine');
     }
+  };
+
+  const archiveBatch = async (medicineId: string, batch: any, reason = 'Manual') => {
+    if (!currentUser?.pharmacyId || !batch) return;
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        const medicine = medicines.find((m: any) => m.id === medicineId);
+        if (!medicine) throw new Error('Medicine not found');
+
+        const now = new Date().toISOString();
+        const archivedBatch = {
+          ...batch,
+          isArchived: true,
+          archivedAt: now,
+          archiveReason: reason,
+          quantity: 0,
+          depletedAt: batch.depletedAt || now,
+        };
+        const activeBatches = (medicine.batches || []).filter((item: any) => item.id !== batch.id);
+        const archivedMedicine = {
+          ...medicine,
+          batches: activeBatches,
+          archivedBatches: [...(medicine.archivedBatches || []), archivedBatch],
+          totalQuantity: activeBatches.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0),
+        };
+
+        await services.medicineService.updateMedicine(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          medicineId,
+          archivedMedicine
+        );
+
+        setMedicines((prev: any[]) => prev.map((m: any) => (m.id === medicineId ? archivedMedicine : m)));
+
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'MEDICINE_ARCHIVE',
+          entityType: 'medicine',
+          entityName: medicine.name,
+          details: { medicineId, batchId: batch.id, reason }
+        });
+
+        toast.success(`${medicine.name} batch archived successfully`);
+      }
+    } catch (error) {
+      console.error('Error archiving batch:', error);
+      toast.error('Failed to archive batch');
+    }
+  };
+
+  const restoreArchivedBatch = async (medicineId: string, batch: any) => {
+    if (!currentUser?.pharmacyId || !batch) return;
+    try {
+      const services = await loadFirebaseAsync();
+      if (services?.medicineService) {
+        const medicine = medicines.find((m: any) => m.id === medicineId);
+        if (!medicine) throw new Error('Medicine not found');
+
+        const restoredBatch = {
+          ...batch,
+          isArchived: false,
+          archivedAt: undefined,
+          archiveReason: undefined,
+          quantity: Number(batch.quantity || 0) > 0 ? Number(batch.quantity || 0) : 0,
+        };
+        const activeBatches = [...(medicine.batches || []), restoredBatch];
+        const archivedBatches = (medicine.archivedBatches || []).filter((item: any) => item.id !== batch.id);
+        const restoredMedicine = {
+          ...medicine,
+          batches: activeBatches,
+          archivedBatches: archivedBatches,
+          totalQuantity: activeBatches.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0),
+        };
+
+        await services.medicineService.updateMedicine(
+          currentUser.pharmacyId,
+          medicine.categoryId,
+          medicineId,
+          restoredMedicine
+        );
+
+        setMedicines((prev: any[]) => prev.map((m: any) => (m.id === medicineId ? restoredMedicine : m)));
+
+        await auditService.logAction(currentUser.pharmacyId, {
+          userId: currentUser.uid,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          action: 'MEDICINE_RESTORE',
+          entityType: 'medicine',
+          entityName: medicine.name,
+          details: { medicineId, batchId: batch.id }
+        });
+
+        toast.success(`${medicine.name} batch restored successfully`);
+      }
+    } catch (error) {
+      console.error('Error restoring batch:', error);
+      toast.error('Failed to restore batch');
+    }
+  };
+
+  const performDeleteMedicine = async (id: string) => {
+    await archiveMedicine(id, 'Deleted / Discontinued');
   };
 
   const handleDeleteMedicine = async (id: string, batchId?: string) => {
     if (batchId) {
-      const medicine = medicines.find(m => m.id === id);
+      const medicine = medicines.find((m: any) => m.id === id);
       if (!medicine) return;
-
-      // Handle legacy single batch case
-      if ((!medicine.batches || medicine.batches.length === 0) && batchId === `${id}-single`) {
-        await performDeleteMedicine(id);
-        return;
-      }
-
-      // Handle specific batch deletion
-      const currentBatches = medicine.batches || [];
-      const newBatches = currentBatches.filter((b: any) => b.batchId !== batchId);
-      
-      // If no batches left, update quantity to 0 but keep medicine
-      const newQty = newBatches.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0);
-      
-      const updated = {
-        ...medicine,
-        totalQuantity: newQty,
-        batches: newBatches
-      };
-
-      setMedicines(prev => prev.map(m => m.id === id ? updated : m));
-
-      // Audit log for batch deletion
-      (async () => {
-        try {
-          await auditService.logAction({
-            userId: currentUser?.uid || 'unknown',
-            userName: currentUser?.name || 'Unknown User',
-            userRole: currentUser?.role || 'unknown',
-            action: 'MEDICINE_BATCH_DELETE',
-            entityType: 'medicine',
-            entityId: id,
-            entityName: medicine.name,
-            details: { deletedBatchId: batchId, remainingQty: newQty }
-          });
-        } catch (e) {}
-      })();
-
-      // Firebase update
-      if (firebaseReady) {
-        try {
-          const services = await loadFirebaseAsync();
-          if (services?.medicineService) {
-            await services.medicineService.updateMedicine(id, updated);
-          }
-        } catch (error) {
-          console.error('[AppSimple] Failed to update medicine batches in Firebase:', error);
-        }
-      }
-    } else {
-      await performDeleteMedicine(id);
+      const targetBatch = (medicine.batches || []).find((b: any) => b.id === batchId || b.batchId === batchId);
+      if (!targetBatch) return;
+      await archiveBatch(id, targetBatch, 'Batch Removed');
+      return;
     }
+
+    await performDeleteMedicine(id);
   };
 
   const renderPage = () => {
@@ -806,7 +982,17 @@ function AppSimple() {
       case 'orders':
         return <OrdersSuppliers />;
       case 'activity':
-        return <AuditLog currentUser={currentUser} settings={settings} />;
+        return (
+          <AuditLog
+            currentUser={currentUser}
+            settings={settings}
+            medicines={medicines}
+            onArchiveBatch={archiveBatch}
+            onRestoreArchivedBatch={restoreArchivedBatch}
+            onArchiveMedicine={archiveMedicine}
+            onRestoreMedicine={restoreArchivedMedicine}
+          />
+        );
       case 'receipts':
         if (currentUser?.role !== 'staff') {
           return <div className="p-6">Unauthorized</div>;

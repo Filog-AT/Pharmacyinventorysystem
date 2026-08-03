@@ -686,16 +686,6 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
                 Send Reset Link
               </button>
             </div>
-
-            <div className="pt-4 border-t border-gray-100 mt-4">
-              <button 
-                onClick={() => setShowDevTools(!showDevTools)}
-                className="text-[10px] font-bold text-gray-400 hover:text-blue-500 transition-colors uppercase tracking-widest flex items-center gap-2"
-              >
-                <Database className="w-3 h-3" />
-                {showDevTools ? 'Hide' : 'Show'} Developer & Demo Tools
-              </button>
-            </div>
           </div>
         </section>
       </div>
@@ -814,89 +804,6 @@ export function Settings({ settings, onUpdateSettings, categories = [], medicine
         </section>
       )}
 
-      {/* 4. Demo Data Tools (Managers Only) */}
-      {currentUser?.role === 'manager' && showDevTools && (
-        <section className="bg-card rounded-xl border p-8 shadow-sm border-amber-200 bg-amber-50/5 space-y-8 animate-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center gap-3 border-b border-amber-200 pb-4">
-            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
-              <Database className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold">Developer & Demo Tools</h2>
-              <p className="text-xs text-muted-foreground text-amber-700">Tools to populate your pharmacy workspace with demo data</p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            {/* Medicine Generator */}
-            <div className="space-y-4 bg-white p-6 rounded-2xl border border-blue-100 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                 <Package className="w-6 h-6 text-blue-600" />
-                 <h3 className="font-bold text-blue-900">Medicine Generator</h3>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Generates the <strong>complete dataset of 60+ medicines</strong> with their brand variations (Biogesic, Calpol, etc.) and multiple dosage forms.
-              </p>
-              <button 
-                onClick={generateDemoData} 
-                disabled={generating} 
-                className="w-full bg-blue-600 text-white px-6 py-4 rounded-xl hover:bg-blue-700 font-black transition-all disabled:bg-gray-300 flex items-center justify-center gap-2 shadow-md"
-              >
-                {generating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-                Generate All Medicines & Brands
-              </button>
-            </div>
-
-            {/* Receipt Generator */}
-            <div className="space-y-4 bg-white p-6 rounded-2xl border border-emerald-100 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                 <TrendingUp className="w-6 h-6 text-emerald-600" />
-                 <h3 className="font-bold text-emerald-900">Historical Sales Generator</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-black text-emerald-600 uppercase mb-1">Timeframe</label>
-                  <select value={demoMonths} onChange={(e) => setDemoMonths(e.target.value)} className="w-full text-xs font-bold p-2.5 border border-emerald-100 rounded-lg bg-emerald-50/30">
-                    <option value="1">Past 1 Month</option>
-                    <option value="3">Past 3 Months</option>
-                    <option value="6">Past 6 Months</option>
-                    <option value="12">Past 12 Months</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-emerald-600 uppercase mb-1">Receipts</label>
-                  <input type="number" value={demoSalesCount} onChange={(e) => setDemoSalesCount(e.target.value)} className="w-full text-xs font-bold p-2 border border-emerald-100 rounded-lg bg-emerald-50/30" />
-                </div>
-              </div>
-              <button 
-                onClick={generateDemoReceipts} 
-                disabled={generating || medicines.length === 0} 
-                className="w-full bg-emerald-600 text-white px-6 py-4 rounded-xl hover:bg-emerald-700 font-black transition-all disabled:bg-gray-300 flex items-center justify-center gap-2 shadow-md"
-              >
-                {generating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                Generate Sales History
-              </button>
-            </div>
-
-            {/* Reset Inventory */}
-            <div className="md:col-span-2 p-6 border border-red-200 rounded-2xl bg-red-50/50 flex items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white rounded-xl text-red-600 border border-red-100 shadow-sm">
-                   <Trash2 className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-black text-red-900">Factory Reset Inventory</h3>
-                  <p className="text-xs text-red-600/70 font-medium max-w-md">This will permanently delete all medicines, categories, and inventory data for this pharmacy. This action cannot be undone.</p>
-                </div>
-              </div>
-              <button onClick={clearInventory} disabled={clearing} className="bg-red-600 text-white px-8 py-3 rounded-xl hover:bg-red-700 font-black text-sm transition-all disabled:bg-gray-300 flex items-center gap-2 shadow-lg">
-                {clearing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                Wipe All Data
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
     </div>
   );
 }

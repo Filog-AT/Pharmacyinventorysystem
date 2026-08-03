@@ -60,7 +60,7 @@ export function DeleteWarningModal({ isOpen, onClose, onConfirm, title, message,
               }}
               className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-md hover:bg-red-700 font-bold transition-colors shadow-sm"
             >
-              Delete Item
+              Archive Brand
             </button>
           </div>
         </div>

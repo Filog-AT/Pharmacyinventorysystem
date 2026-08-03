@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
 import { toast } from 'sonner';
-import { Search, Package, Plus, Pencil, Trash2, X, Eye, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react';
+import { Search, Package, Plus, Pencil, Trash2, X, Eye, ChevronDown, ChevronUp, ShieldAlert, Archive, RotateCcw } from 'lucide-react';
 import { MedicineForm } from './MedicineForm';
 import { ViewBatchesModal } from './ViewBatchesModal';
 import { AddStockForm } from './AddStockForm';
@@ -104,6 +104,20 @@ export function Inventory({
 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [archiveFilter, setArchiveFilter] = useState('all');
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [showArchiveView, setShowArchiveView] = useState(false);
+  const [selectedArchiveItem, setSelectedArchiveItem] = useState(null);
+
+  // Prevent background scrolling when archive modal is open
+  useEffect(() => {
+    if (showArchiveView) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [showArchiveView]);
 
   const getStockStatus = (totalQuantity, minStockLevel) => {
     return inventoryBackend.getStockStatus(totalQuantity, minStockLevel);
@@ -220,6 +234,79 @@ export function Inventory({
     }
   };
 
+  const handleArchiveBatch = async (medicine, batch, reason = 'Manual') => {
+    if (!medicine || !batch) return;
+    const now = new Date().toISOString();
+    const archivedBatch = {
+      ...batch,
+      isArchived: true,
+      archivedAt: now,
+      archiveReason: reason,
+      quantity: 0,
+      depletedAt: batch.depletedAt || now,
+    };
+    const updatedActiveBatches = (medicine.batches || []).filter((item) => item.id !== batch.id);
+    const updatedArchivedBatches = [...(medicine.archivedBatches || []), archivedBatch];
+    try {
+      await onUpdateMedicine?.(medicine.id, {
+        archivedBatches: updatedArchivedBatches,
+        batches: updatedActiveBatches,
+        totalQuantity: 0,
+        archivedAt: now,
+        archiveReason: reason,
+        isArchived: false,
+      });
+      toast.success(`${medicine.name} archived successfully`);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to archive batch');
+    }
+  };
+
+  const handleRestoreArchivedBatch = async (medicine, batch) => {
+    if (!medicine || !batch) return;
+    const restoredBatch = { ...batch, isArchived: false, archivedAt: undefined, archiveReason: undefined, quantity: batch.quantity || 0 };
+    const updatedArchivedBatches = (medicine.archivedBatches || []).filter((item) => item.id !== batch.id);
+    const updatedActiveBatches = [...(medicine.batches || []), restoredBatch];
+    try {
+      await onUpdateMedicine?.(medicine.id, {
+        archivedBatches: updatedArchivedBatches,
+        batches: updatedActiveBatches,
+        totalQuantity: updatedActiveBatches.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+      });
+      toast.success(`${medicine.name} restored successfully`);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to restore batch');
+    }
+  };
+
+  const handleRestoreArchivedMedicine = async (medicine) => {
+    if (!medicine) return;
+    try {
+      const restoredBatches = (medicine.archivedBatches || []).map((batch) => ({
+        ...batch,
+        isArchived: false,
+        archivedAt: undefined,
+        archiveReason: undefined,
+        // Restore original quantity — use initialQuantity if available, otherwise keep existing
+        quantity: Number(batch.initialQuantity || batch.quantity || 0),
+      }));
+      await onUpdateMedicine?.(medicine.id, {
+        batches: restoredBatches,
+        archivedBatches: [],
+        totalQuantity: restoredBatches.reduce((sum, b) => sum + Number(b.quantity || 0), 0),
+        isArchived: false,
+        archivedAt: undefined,
+        archiveReason: undefined,
+      });
+      toast.success(`${medicine.name} restored successfully`);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to restore brand');
+    }
+  };
+
   const handleSubmitStock = async (medicineId, batchData) => {
     // No setSubmitting(true) here because AddStockForm has its own loading screen
     try {
@@ -247,6 +334,13 @@ export function Inventory({
         <div className="flex gap-3">
           {!isStaff && (
             <>
+              <button
+                onClick={() => setShowArchiveView(true)}
+                className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition-colors font-medium shadow-sm"
+              >
+                <Archive className="w-5 h-5" />
+                Archive
+              </button>
               <button
                 onClick={handleAddProductClick}
                 className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm"
@@ -327,8 +421,7 @@ export function Inventory({
                         toast.error('Cannot delete category with medicines');
                         return;
                       }
-                      // Use custom modal or just simple confirm for categories
-                      if (confirm(`Delete category "${cat.name}"?`)) {
+                      if (window.confirm(`Delete category "${cat.name}"?`)) {
                         onDeleteCategory?.(cat.name);
                       }
                     }}
@@ -387,7 +480,7 @@ export function Inventory({
                   <th className="w-10 p-4"></th>
                   <th className="text-left p-4 font-semibold">Medicine Name</th>
                   <th className="text-left p-4 font-semibold">Category</th>
-                  <th className="text-right p-4 font-semibold">Total Variations</th>
+                  <th className="text-right p-4 font-semibold">Total Brand</th>
                   <th className="text-right p-4 font-semibold">Total Stock</th>
                   <th className="text-center p-4 font-semibold">Status</th>
                   <th className="text-center p-4 font-semibold">Tag</th>
@@ -586,6 +679,281 @@ export function Inventory({
         </div>
       )}
 
+      {showArchiveView && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b px-6 py-4 flex-shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Archive className="w-5 h-5 text-amber-600" />
+                  Archive
+                </h2>
+                <p className="text-sm text-gray-500 mt-0.5">Archived brands and inactive batches — restore anytime.</p>
+              </div>
+              <button onClick={() => setShowArchiveView(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tab bar + Search */}
+            <div className="flex items-center gap-3 px-6 py-3 border-b bg-gray-50 flex-shrink-0 flex-wrap">
+              <div className="inline-flex rounded-lg border overflow-hidden bg-white shadow-sm">
+                {[
+                  { id: 'brands', label: 'Archived Brands', count: safeMedicines.filter(m => m.isArchived).length },
+                  { id: 'batches', label: 'Archived Batches', count: safeMedicines.flatMap(m => m.archivedBatches || []).length },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setArchiveFilter(tab.id)}
+                    className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 ${
+                      archiveFilter === tab.id
+                        ? 'bg-amber-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    } ${tab.id !== 'brands' ? 'border-l' : ''}`}
+                  >
+                    {tab.label}
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      archiveFilter === tab.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                    }`}>{tab.count}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder={archiveFilter === 'brands' ? 'Search brands…' : 'Search batches…'}
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-6">
+
+              {/* ── ARCHIVED BRANDS ─────────────────────────────────────── */}
+              {archiveFilter === 'brands' && (() => {
+                const archivedBrands = safeMedicines
+                  .filter(m => m.isArchived)
+                  .filter(m => {
+                    const q = archiveSearch.toLowerCase();
+                    return !q ||
+                      (m.name || '').toLowerCase().includes(q) ||
+                      (m.brandName || '').toLowerCase().includes(q) ||
+                      (m.category || '').toLowerCase().includes(q) ||
+                      (m.archiveReason || '').toLowerCase().includes(q);
+                  });
+
+                if (archivedBrands.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                      <Archive className="w-12 h-12 mb-3 opacity-30" />
+                      <p className="font-medium">No archived brands yet.</p>
+                      <p className="text-sm mt-1">Brands you archive will appear here.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-4">
+                    {archivedBrands.map(medicine => {
+                      const batches = medicine.archivedBatches || [];
+                      return (
+                        <div key={medicine.id} className="border rounded-xl overflow-hidden shadow-sm">
+                          {/* Brand header */}
+                          <div className="flex items-start justify-between gap-4 p-4 bg-amber-50 border-b border-amber-100">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-gray-900 text-base">{medicine.name}</h3>
+                                {medicine.brandName && medicine.brandName !== medicine.name && (
+                                  <span className="text-xs text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full font-semibold">{medicine.brandName}</span>
+                                )}
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{medicine.category || 'Uncategorized'}</span>
+                                {medicine.dosageForm && (
+                                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full capitalize">{medicine.dosageForm} · {medicine.strength}</span>
+                                )}
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-4 text-xs text-gray-500">
+                                <span>Archived: <strong className="text-gray-700">{medicine.archivedAt ? new Date(medicine.archivedAt).toLocaleDateString() : '—'}</strong></span>
+                                <span>Reason: <strong className="text-gray-700">{medicine.archiveReason || 'Manual'}</strong></span>
+                                <span>{batches.length} batch{batches.length !== 1 ? 'es' : ''} in history</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleRestoreArchivedMedicine(medicine)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm flex-shrink-0"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Restore Brand
+                            </button>
+                          </div>
+
+                          {/* Batch history table */}
+                          {batches.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full text-sm">
+                                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-4 py-2.5 text-left">Batch No.</th>
+                                    <th className="px-4 py-2.5 text-left">Supplier</th>
+                                    <th className="px-4 py-2.5 text-left">Expiry Date</th>
+                                    <th className="px-4 py-2.5 text-right">Orig. Qty</th>
+                                    <th className="px-4 py-2.5 text-left">Archive Reason</th>
+                                    <th className="px-4 py-2.5 text-left">Date Archived</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {batches.map(batch => {
+                                    const isExpired = batch.expiryDate && new Date(batch.expiryDate) < new Date();
+                                    return (
+                                      <tr key={batch.id} className="hover:bg-gray-50/50">
+                                        <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">{batch.batchNumber || '—'}</td>
+                                        <td className="px-4 py-3 text-gray-600">{batch.supplier || '—'}</td>
+                                        <td className="px-4 py-3">
+                                          <span className={`text-xs font-medium ${isExpired ? 'text-red-600' : 'text-gray-700'}`}>
+                                            {batch.expiryDate || '—'}
+                                            {isExpired && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Expired</span>}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-gray-700 font-medium">{batch.initialQuantity || batch.quantity || 0}</td>
+                                        <td className="px-4 py-3">
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
+                                            {batch.archiveReason || 'Manual'}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-500 text-xs">{batch.archivedAt ? new Date(batch.archivedAt).toLocaleDateString() : '—'}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="px-4 py-3 text-sm text-gray-400 italic">No batch history recorded for this brand.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* ── ARCHIVED BATCHES ─────────────────────────────────────── */}
+              {archiveFilter === 'batches' && (() => {
+                const allArchivedBatches = safeMedicines.flatMap(medicine =>
+                  (medicine.archivedBatches || []).map(batch => ({ medicine, batch }))
+                ).filter(({ medicine, batch }) => {
+                  const q = archiveSearch.toLowerCase();
+                  return !q ||
+                    (medicine.name || '').toLowerCase().includes(q) ||
+                    (medicine.brandName || '').toLowerCase().includes(q) ||
+                    (batch.batchNumber || '').toLowerCase().includes(q) ||
+                    (batch.archiveReason || '').toLowerCase().includes(q) ||
+                    (batch.supplier || '').toLowerCase().includes(q);
+                });
+
+                if (allArchivedBatches.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                      <Archive className="w-12 h-12 mb-3 opacity-30" />
+                      <p className="font-medium">No archived batches yet.</p>
+                      <p className="text-sm mt-1">Depleted, expired, or manually archived batches appear here.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="border rounded-xl overflow-hidden shadow-sm">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Batch No.</th>
+                          <th className="px-4 py-3 text-left">Medicine</th>
+                          <th className="px-4 py-3 text-left">Brand</th>
+                          <th className="px-4 py-3 text-right">Qty (Final)</th>
+                          <th className="px-4 py-3 text-left">Expiry Date</th>
+                          <th className="px-4 py-3 text-left">Archive Reason</th>
+                          <th className="px-4 py-3 text-left">Date Archived</th>
+                          <th className="px-4 py-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {allArchivedBatches.map(({ medicine, batch }) => {
+                          const isExpired = batch.expiryDate && new Date(batch.expiryDate) < new Date();
+                          const reasonColor = {
+                            'Out of Stock': 'bg-gray-100 text-gray-600',
+                            'Expired': 'bg-red-100 text-red-600',
+                            'Recalled': 'bg-orange-100 text-orange-700',
+                            'Damaged': 'bg-yellow-100 text-yellow-700',
+                            'Brand deleted': 'bg-amber-100 text-amber-700',
+                            'Manual': 'bg-blue-50 text-blue-600',
+                          }[batch.archiveReason] || 'bg-gray-100 text-gray-600';
+
+                          return (
+                            <tr key={`${medicine.id}-${batch.id}`} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">{batch.batchNumber || '—'}</td>
+                              <td className="px-4 py-3 font-semibold text-gray-900">{medicine.name}</td>
+                              <td className="px-4 py-3 text-blue-700 font-medium">{medicine.brandName || '—'}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{batch.initialQuantity ?? batch.quantity ?? 0}</td>
+                              <td className="px-4 py-3">
+                                <span className={`text-xs font-medium ${isExpired ? 'text-red-600' : 'text-gray-700'}`}>
+                                  {batch.expiryDate || '—'}
+                                  {isExpired && <span className="ml-1 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Expired</span>}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${reasonColor}`}>
+                                  {batch.archiveReason || 'Manual'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{batch.archivedAt ? new Date(batch.archivedAt).toLocaleDateString() : '—'}</td>
+                              <td className="px-4 py-3 text-right">
+                                {!medicine.isArchived && (
+                                  <button
+                                    onClick={() => handleRestoreArchivedBatch(medicine, batch)}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 text-xs font-semibold hover:bg-emerald-100 transition-colors ml-auto"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                    Restore
+                                  </button>
+                                )}
+                                {medicine.isArchived && (
+                                  <span className="text-xs text-gray-400 italic">Brand archived</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedArchiveItem && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[70]">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">{selectedArchiveItem.type === 'batch' ? 'Archived Batch Details' : 'Archived Brand Details'}</h3>
+                <p className="text-sm text-gray-500">{selectedArchiveItem.medicine?.name || 'Archive item'}</p>
+              </div>
+              <button onClick={() => setSelectedArchiveItem(null)} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddCategoryForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-md w-full p-6 shadow-xl relative overflow-hidden">
@@ -673,8 +1041,8 @@ export function Inventory({
           onDeleteMedicine?.(deleteModal.id);
           setDeleteModal({ isOpen: false, id: null, name: '' });
         }}
-        title="Delete Medicine Variation"
-        message="Are you sure you want to delete this medicine variation? This will remove all associated batch records and history."
+        title="Archive Brand"
+        message="Archive this brand and its associated batches instead of deleting it permanently. This keeps the history available for future review."
         itemName={deleteModal.name}
       />
     </div>

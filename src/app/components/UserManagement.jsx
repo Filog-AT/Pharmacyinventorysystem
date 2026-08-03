@@ -128,7 +128,7 @@ export function UserManagement({ currentUser }) {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       return;
     }
 

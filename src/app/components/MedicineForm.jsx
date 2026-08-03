@@ -96,6 +96,7 @@ export function MedicineForm({ medicine, categories, medicines = [], onSubmit, o
 
   const [customCategory, setCustomCategory] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -114,12 +115,12 @@ export function MedicineForm({ medicine, categories, medicines = [], onSubmit, o
     const perBlister = Number(payload.tabletCount || 1);
 
     if (!payload.strength) {
-      alert('Please enter dosage/strength');
+      setFormError('Please enter dosage/strength');
       setSubmitting(false);
       return;
     }
     if (blisters <= 0 || perBlister <= 0) {
-      alert('Blister and per-blister counts must be greater than 0');
+      setFormError('Blister and per-blister counts must be greater than 0');
       setSubmitting(false);
       return;
     }
@@ -131,12 +132,13 @@ export function MedicineForm({ medicine, categories, medicines = [], onSubmit, o
     if (payload.category === 'new') {
       const newCat = (customCategory || '').trim();
       if (!newCat) {
-        alert('Please enter a category name');
+        setFormError('Please enter a category name');
         setSubmitting(false);
         return;
       }
       payload.category = newCat;
     }
+    setFormError('');
 
     try {
       await onSubmit(payload);
@@ -232,7 +234,12 @@ export function MedicineForm({ medicine, categories, medicines = [], onSubmit, o
                 </div>
               </div>
             )}
-
+            {formError && (
+              <div className="bg-red-50 border border-red-200 p-4 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-800 font-medium">{formError}</p>
+              </div>
+            )}
             <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>

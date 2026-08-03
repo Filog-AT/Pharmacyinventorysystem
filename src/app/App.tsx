@@ -24,6 +24,7 @@ type CurrentUser = {
   email: string | null;
   name: string;
   role: string;
+  pharmacyId?: string;
 } | null;
 
 // Sample data removed to avoid structure mismatch with the new batch system.
@@ -78,12 +79,13 @@ function App() {
 
   console.log('[App] Render. State:', { initializing, authenticated: !!currentUser, error });
 
-  // Load medicines from Firebase on component mount
+  // Load medicines whenever currentUser (with pharmacyId) becomes available
   useEffect(() => {
-    console.log('[App] Loading medicines...');
+    if (!currentUser?.pharmacyId) return;
+    console.log('[App] Loading medicines for pharmacy:', currentUser.pharmacyId);
     const loadMedicines = async () => {
       try {
-        const firebaseMedicines = await medicineService.getMedicines();
+        const firebaseMedicines = await medicineService.getMedicines(currentUser.pharmacyId!);
         console.log('[App] Got medicines from Firebase:', firebaseMedicines.length);
         setMedicines(firebaseMedicines);
       } catch (error) {
@@ -93,7 +95,7 @@ function App() {
     };
 
     loadMedicines();
-  }, [setMedicines]);
+  }, [currentUser?.pharmacyId]);
 
   // Listen to auth state changes
   useEffect(() => {
@@ -131,12 +133,12 @@ function App() {
   }, []);
 
   const handleLogin = (user: any) => {
-    // Ensure user has all required properties
     const appUser: CurrentUser = {
       uid: user.uid || user.username || 'mock-uid',
       email: user.email || (user.username ? `${user.username}@example.com` : null),
       name: user.name,
-      role: user.role
+      role: user.role,
+      pharmacyId: user.pharmacyId || undefined,
     };
     setCurrentUser(appUser);
     setActivePage('dashboard');
@@ -168,10 +170,12 @@ function App() {
 
   const handleAddMedicine = async (medicineData: any) => {
     try {
-      const id = await medicineService.addMedicine(medicineData);
-      // Fetch full medicine with calculated totalQuantity
-      const medicines = await medicineService.getMedicines();
-      setMedicines(medicines);
+      const pId = medicineData.pharmacyId || currentUser?.pharmacyId;
+      const cId = medicineData.categoryId;
+      const id = await medicineService.addMedicine(pId, cId, medicineData);
+      // Reload medicines so the new entry appears
+      const refreshed = await medicineService.getMedicines(pId);
+      setMedicines(refreshed);
     } catch (error: any) {
       console.error('Failed to add medicine:', error);
       alert(error.message || 'Failed to add medicine');
@@ -181,8 +185,16 @@ function App() {
 
   const handleUpdateMedicine = async (id: string, medicineData: any) => {
     try {
-      await medicineService.updateMedicine(id, medicineData);
-      const updatedMedicines = await medicineService.getMedicines();
+      const existing = medicines.find((m) => m.id === id);
+      const pharmacyId = medicineData.pharmacyId || existing?.pharmacyId || currentUser?.pharmacyId;
+      const categoryId = medicineData.categoryId || existing?.categoryId;
+      if (!pharmacyId || !categoryId) {
+        console.error('[App] handleUpdateMedicine: missing pharmacyId or categoryId', { pharmacyId, categoryId, id });
+        setError('Failed to update medicine — missing pharmacy/category context');
+        return;
+      }
+      await medicineService.updateMedicine(pharmacyId, categoryId, id, medicineData);
+      const updatedMedicines = await medicineService.getMedicines(pharmacyId);
       setMedicines(updatedMedicines);
     } catch (error) {
       console.error('Failed to update medicine:', error);
@@ -191,21 +203,52 @@ function App() {
   };
 
   const handleDeleteMedicine = async (id: string) => {
-    if (confirm('Are you sure you want to delete this medicine? All batch data will be lost.')) {
-      try {
-        await medicineService.deleteMedicine(id);
-        deleteMedicine(id);
-      } catch (error) {
-        console.error('Failed to delete medicine:', error);
-        setError('Failed to delete medicine');
-      }
+    try {
+      const medicine = medicines.find((m) => m.id === id);
+      if (!medicine) return;
+
+      const pharmacyId = medicine.pharmacyId || currentUser?.pharmacyId;
+      const categoryId = medicine.categoryId;
+      const now = new Date().toISOString();
+
+      const currentArchived = medicine.archivedBatches || [];
+      const activeBatches = medicine.batches || [];
+      const newArchivedBatches = [
+        ...currentArchived,
+        ...activeBatches.map((b) => ({
+          ...b,
+          isArchived: true,
+          archivedAt: now,
+          archiveReason: 'Brand deleted',
+          quantity: 0,
+          depletedAt: b.depletedAt || now,
+        })),
+      ];
+
+      await medicineService.updateMedicine(pharmacyId, categoryId, id, {
+        isArchived: true,
+        archivedAt: now,
+        archiveReason: 'Brand deleted',
+        batches: [],
+        archivedBatches: newArchivedBatches,
+        totalQuantity: 0,
+      });
+
+      const updatedMedicines = await medicineService.getMedicines(pharmacyId);
+      setMedicines(updatedMedicines);
+    } catch (error) {
+      console.error('Failed to archive medicine:', error);
+      setError('Failed to archive medicine');
     }
   };
 
   const handleAddBatch = async (medicineId: string, batchData: any) => {
     try {
-      await medicineService.addBatch(medicineId, batchData);
-      const updatedMedicines = await medicineService.getMedicines();
+      const medicine = medicines.find((m) => m.id === medicineId);
+      const pharmacyId = medicine?.pharmacyId || currentUser?.pharmacyId;
+      const categoryId = medicine?.categoryId;
+      await medicineService.addBatch(pharmacyId, categoryId, medicineId, batchData);
+      const updatedMedicines = await medicineService.getMedicines(pharmacyId);
       setMedicines(updatedMedicines);
     } catch (error) {
       console.error('Failed to add batch:', error);
@@ -215,8 +258,11 @@ function App() {
 
   const handleUpdateBatch = async (medicineId: string, batchId: string, batchData: any) => {
     try {
-      await medicineService.updateBatch(medicineId, batchId, batchData);
-      const updatedMedicines = await medicineService.getMedicines();
+      const medicine = medicines.find((m) => m.id === medicineId);
+      const pharmacyId = medicine?.pharmacyId || currentUser?.pharmacyId;
+      const categoryId = medicine?.categoryId;
+      await medicineService.updateBatch(pharmacyId, categoryId, medicineId, batchId, batchData);
+      const updatedMedicines = await medicineService.getMedicines(pharmacyId);
       setMedicines(updatedMedicines);
     } catch (error) {
       console.error('Failed to update batch:', error);
@@ -226,8 +272,11 @@ function App() {
 
   const handleDeleteBatch = async (medicineId: string, batchId: string) => {
     try {
-      await medicineService.deleteBatch(medicineId, batchId);
-      const updatedMedicines = await medicineService.getMedicines();
+      const medicine = medicines.find((m) => m.id === medicineId);
+      const pharmacyId = medicine?.pharmacyId || currentUser?.pharmacyId;
+      const categoryId = medicine?.categoryId;
+      await medicineService.deleteBatch(pharmacyId, categoryId, medicineId, batchId);
+      const updatedMedicines = await medicineService.getMedicines(pharmacyId);
       setMedicines(updatedMedicines);
     } catch (error) {
       console.error('Failed to delete batch:', error);

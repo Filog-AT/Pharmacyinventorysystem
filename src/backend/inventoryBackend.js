@@ -18,6 +18,7 @@ export const getFilteredMedicines = (safeMedicines, searchTerm, categoryFilter, 
 
   return safeMedicines
     .filter(m => {
+      if (m.isArchived) return false;
       const matchesText =
         (m.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (m.strength || '').toLowerCase().includes(searchTerm.toLowerCase());

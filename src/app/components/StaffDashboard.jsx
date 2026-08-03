@@ -8,7 +8,7 @@ let receiptServiceModule = null;
 export function StaffDashboard({ medicines = [], currentUser }) {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [timeScale, setTimeScale] = useState('monthly'); // forced to monthly as per removal of daily/weekly
+  const [timeScale, setTimeScale] = useState('daily');
 
   const loadReceiptService = async () => {
     if (receiptServiceModule) return receiptServiceModule;
@@ -143,19 +143,22 @@ export function StaffDashboard({ medicines = [], currentUser }) {
               <Activity className="w-5 h-5 text-blue-600" />
               Sales Performance
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Historical monthly sales distribution</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {timeScale === 'daily' ? 'Last 7 days' : 'Last 6 months'}
+            </p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex bg-gray-100 p-1 rounded-lg">
               {[
-                { id: 'monthly', label: 'Monthly' }
+                { id: 'daily', label: 'Daily' },
+                { id: 'monthly', label: 'Monthly' },
               ].map((ts) => (
                 <button
                   key={ts.id}
                   onClick={() => setTimeScale(ts.id)}
                   className={`px-3 py-1 text-[10px] rounded-md transition-all ${
-                    timeScale === ts.id 
-                      ? 'bg-white shadow-sm text-blue-600 font-bold' 
+                    timeScale === ts.id
+                      ? 'bg-white shadow-sm text-blue-600 font-bold'
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >

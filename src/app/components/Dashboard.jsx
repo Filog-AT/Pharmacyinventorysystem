@@ -993,7 +993,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
       {statusModal.open && (
         <div 
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
           onClick={() => setStatusModal({ open: false, type: null, window: 30 })}
         >
           <div 
@@ -1290,7 +1290,7 @@ export function Dashboard({ medicines = [], categories = [], onAddMedicine, onUp
 
       {/* Category Medicine List Modal */}
       {selectedCategoryModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-300">
             <div className="p-6 border-b bg-gray-50/50 flex items-center justify-between">
               <div>

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Minus, ShoppingCart, X, AlertCircle, FileText, Trash2, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import { auditService } from '@/services/auditService';
 import { medicineService } from '@/services/medicineService';
 import { receiptService } from '@/services/receiptService';
@@ -31,6 +32,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
 
   const filteredMedicines = useMemo(() => {
     return medicines.filter(m => {
+      if (m.isArchived) return false;
       const search = searchTerm.toLowerCase();
       const name = (m.name || '').toLowerCase();
       const brand = (m.brandName || '').toLowerCase();
@@ -76,7 +78,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
     if (existing) {
       const maxQ = getMaxSaleQuantity(latestMedicine, defaultUnit);
       if ((existing.quantity + (existing.extraPieces || 0)) >= maxQ) {
-        alert('Cannot add more than available stock');
+        toast.error('Cannot add more than available stock');
         return;
       }
       setCart(cart.map(item =>
@@ -87,7 +89,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
     } else {
       const maxQ = getMaxSaleQuantity(latestMedicine, defaultUnit);
       if (maxQ <= 0) {
-        alert('Out of stock');
+        toast.error('Out of stock');
         return;
       }
       setCart([...cart, { medicine: latestMedicine, quantity: 1, extraPieces: 0, sellUnit: defaultUnit, unitPrice }]);
@@ -209,6 +211,10 @@ export function SalesPOS({ medicines, currentUser, settings }) {
     return val > 0 ? Number(val.toFixed(2)) : 0;
   }, [amountReceived, grandTotal]);
 
+  const isInsufficient = useMemo(() => {
+    return amountReceived !== '' && (Number(amountReceived) || 0) < grandTotal;
+  }, [amountReceived, grandTotal]);
+
   const hasPrescriptionMed = useMemo(() => {
     return cart.some(item => {
       const tag = String(item.medicine.tag || '').toLowerCase();
@@ -219,7 +225,6 @@ export function SalesPOS({ medicines, currentUser, settings }) {
   const handleCheckout = async (shouldPrint = false) => {
     if (cart.length === 0) return;
     if ((Number(amountReceived) || 0) < grandTotal) {
-      alert('Insufficient amount received');
       return;
     }
     
@@ -313,7 +318,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
       setCustomerName('');
     } catch (error) {
       console.error('[SalesPOS] Checkout error:', error);
-      alert(`Error processing sale: ${error.message}`);
+      toast.error(`Error processing sale: ${error.message}`);
       setCheckoutStep('input');
     }
   };
@@ -530,7 +535,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
       doc.save(`Receipt_${r.id?.slice(-8)}.pdf`);
     } catch (err) {
       console.error('PDF generation error:', err);
-      alert('Error generating PDF');
+      toast.error('Error generating PDF');
     }
   };
 
@@ -566,15 +571,15 @@ export function SalesPOS({ medicines, currentUser, settings }) {
   };
 
   const handleClearHistory = async () => {
-    if (!confirm('Are you sure you want to clear all receipts history? This action cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to clear all receipts history? This action cannot be undone.')) return;
     
     try {
-      setCheckoutStep('processing'); // Use existing processing state for loading
+      setCheckoutStep('processing');
       for (const r of receipts) {
         await receiptService.deleteReceipt(currentUser.pharmacyId, r.id);
       }
       await loadReceipts();
-      alert('History cleared successfully');
+      toast.success('History cleared successfully');
     } catch (err) {
       console.error('Error clearing history:', err);
       alert('Failed to clear history');
@@ -897,6 +902,12 @@ export function SalesPOS({ medicines, currentUser, settings }) {
 
                   <div>
                     <label className="block text-sm font-bold mb-2 text-gray-700 uppercase tracking-wider">Amount Received (PHP)</label>
+                    {isInsufficient && (
+                      <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span className="text-sm font-semibold">Insufficient funds — enter at least {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(grandTotal)}</span>
+                      </div>
+                    )}
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-gray-400">₱</span>
                       <input
@@ -904,7 +915,11 @@ export function SalesPOS({ medicines, currentUser, settings }) {
                         value={amountReceived}
                         onChange={(e) => setAmountReceived(e.target.value)}
                         placeholder="0.00"
-                        className="w-full pl-10 pr-4 py-4 border-2 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 bg-gray-50 text-3xl font-black transition-all"
+                        className={`w-full pl-10 pr-4 py-4 border-2 rounded-xl focus:outline-none focus:ring-4 bg-gray-50 text-3xl font-black transition-all ${
+                          isInsufficient
+                            ? 'border-red-500 focus:ring-red-100 focus:border-red-500'
+                            : 'focus:ring-blue-100 focus:border-blue-500'
+                        }`}
                         autoFocus
                       />
                     </div>
@@ -920,22 +935,17 @@ export function SalesPOS({ medicines, currentUser, settings }) {
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 pt-2">
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => handleCheckout(false)}
-                        disabled={!amountReceived || Number(amountReceived) < grandTotal}
-                        className="flex-1 bg-emerald-600 text-white py-4 rounded-xl hover:bg-emerald-700 transition-all font-bold shadow-lg shadow-emerald-100 disabled:bg-gray-300 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        Confirm Sale
-                      </button>
-                      <button
-                        onClick={() => handleCheckout(true)}
-                        disabled={!amountReceived || Number(amountReceived) < grandTotal}
-                        className="flex-1 bg-blue-600 text-white py-4 rounded-xl hover:bg-blue-700 transition-all font-bold shadow-lg shadow-blue-100 disabled:bg-gray-300 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        Confirm & Print
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleCheckout(true)}
+                      disabled={!amountReceived || cart.length === 0}
+                      className={`w-full py-4 rounded-xl transition-all font-bold shadow-lg disabled:bg-gray-300 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                        isInsufficient
+                          ? 'bg-red-600 text-white hover:bg-red-700 shadow-red-100'
+                          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-100'
+                      }`}
+                    >
+                      Complete Sale
+                    </button>
                     <button
                       onClick={() => {
                         setShowCheckoutModal(false);

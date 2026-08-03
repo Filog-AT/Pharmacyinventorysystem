@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, Filter, Download, Eye, EyeOff, User, ChevronDown, ChevronUp, ShoppingBag, Box, Settings, LogIn, LogOut, FileText, Trash2, Search } from 'lucide-react';
+import { Calendar, Filter, Download, Eye, EyeOff, User, ChevronDown, ChevronUp, ShoppingBag, Box, Settings, LogIn, LogOut, FileText, Trash2, Search, Archive, RotateCcw, X, Printer } from 'lucide-react';
+import { toast } from 'sonner';
 import { auditService } from '@/services/auditService';
 import { receiptService } from '@/services/receiptService';
 import * as auditBackend from '@/backend/auditBackend';
@@ -28,14 +29,22 @@ const actionColors = {
   PHARMACY_EDIT: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Settings Updated', icon: Settings },
 };
 
-export function AuditLog({ currentUser, settings }) {
+export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch, onRestoreArchivedBatch, onArchiveMedicine, onRestoreMedicine }) {
   const [logs, setLogs] = useState([]);
   const [receipts, setReceipts] = useState([]);
+  const [archivedReceipts, setArchivedReceipts] = useState([]);
   const [filteredLogs, setFilteredLogs] = useState([]);
   const [filteredReceipts, setFilteredReceipts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [viewMode, setViewMode] = useState('audit'); // 'audit' or 'receipts'
+  const [viewMode, setViewMode] = useState('audit'); // 'audit' | 'receipts' | 'archive'
+  const [archiveFilter, setArchiveFilter] = useState('current');  // 'current' | 'archived'
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [selectedReceipt, setSelectedReceipt] = useState(null); // receipt detail view modal
+  const [archivePeriodMonths, setArchivePeriodMonths] = useState(6);
+  const [autoArchiving, setAutoArchiving] = useState(false);
+  const [autoArchiveEnabled, setAutoArchiveEnabled] = useState(false);
   const [expandedSessions, setExpandedExpandedSessions] = useState({});
   const [receiptPage, setReceiptPage] = useState(1);
   const receiptsPerPage = 6;
@@ -93,8 +102,11 @@ export function AuditLog({ currentUser, settings }) {
     if (currentUser?.pharmacyId) {
       if (viewMode === 'audit') {
         loadLogs();
-      } else {
+      } else if (viewMode === 'receipts') {
         loadReceipts();
+      } else if (viewMode === 'archive') {
+        loadReceipts();        // current receipts for the Current tab
+        loadArchivedReceipts(); // archived receipts for the Archived tab
       }
     }
   }, [currentUser?.pharmacyId, viewMode]);
@@ -138,9 +150,58 @@ export function AuditLog({ currentUser, settings }) {
     }
   };
 
+  const loadArchivedReceipts = async () => {
+    if (!currentUser?.pharmacyId) return;
+    setLoading(true);
+    try {
+      const fetched = await receiptService.getArchivedReceipts(currentUser.pharmacyId);
+      setArchivedReceipts(fetched);
+    } catch (error) {
+      console.error('[AuditLog] Error loading archived receipts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Move receipts older than N months from 'receipts' to 'receiptArchive'
+  const runAutoArchive = async () => {
+    if (!currentUser?.pharmacyId) return;
+    setAutoArchiving(true);
+    try {
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - archivePeriodMonths);
+      const all = await receiptService.getReceipts(currentUser.pharmacyId, 0);
+      const toArchive = all.filter(r => {
+        const ts = r.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
+        return ts < cutoff;
+      });
+      let count = 0;
+      for (const r of toArchive) {
+        try {
+          await receiptService.archiveReceipt(currentUser.pharmacyId, r);
+          count++;
+        } catch (err) {
+          console.error('[AuditLog] Failed to archive receipt', r.id, err);
+        }
+      }
+      if (count > 0) {
+        await loadReceipts();
+        await loadArchivedReceipts();
+        toast.success(`${count} receipt${count !== 1 ? 's' : ''} archived successfully`);
+      } else {
+        toast.success('No receipts to archive — all are within the retention period');
+      }
+    } catch (err) {
+      console.error('[AuditLog] Auto-archive error:', err);
+      toast.error('Auto-archive failed');
+    } finally {
+      setAutoArchiving(false);
+    }
+  };
+
   const clearLogs = async () => {
     if (!currentUser?.pharmacyId) return;
-    if (!confirm('Clear all activity logs? This cannot be undone.')) return;
+    if (!window.confirm('Clear all activity logs? This cannot be undone.')) return;
     setClearing(true);
     try {
       await auditService.clearAllLogs(currentUser.pharmacyId);
@@ -154,7 +215,7 @@ export function AuditLog({ currentUser, settings }) {
 
   const clearReceiptHistory = async () => {
     if (!currentUser?.pharmacyId) return;
-    if (!confirm('Clear all receipt history? This cannot be undone and will delete all sale records.')) return;
+    if (!window.confirm('Clear all receipt history? This cannot be undone and will delete all sale records.')) return;
     setClearing(true);
     try {
       await receiptService.clearAllReceipts(currentUser.pharmacyId);
@@ -168,7 +229,7 @@ export function AuditLog({ currentUser, settings }) {
 
   const deleteIndividualReceipt = async (id) => {
     if (!currentUser?.pharmacyId || !id) return;
-    if (!confirm('Delete this receipt?')) return;
+    if (!window.confirm('Delete this receipt?')) return;
     try {
       await receiptService.deleteReceipt(currentUser.pharmacyId, id);
       await loadReceipts();
@@ -479,6 +540,68 @@ export function AuditLog({ currentUser, settings }) {
   };
 
   const formatMoney = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+
+  const printReceiptFromArchive = (r) => {
+    if (!r) return;
+    const ts = r?.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp || r.archivedAt || Date.now());
+    const label = ts.toLocaleString('en-PH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const items = Array.isArray(r.items) ? r.items : [];
+    const grand = r.grandTotal || (r.total || 0) + (r.tax || 0);
+    const fm = (v) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v);
+    const html = `<html><head><title>Receipt</title><style>
+      body{font-family:'Courier New',monospace;width:80mm;margin:0 auto;padding:8mm 4mm;font-size:11px;line-height:1.4}
+      .c{text-align:center}.b{font-weight:bold}.div{border-bottom:1px dashed #000;margin:6px 0}
+      .row{display:flex;justify-content:space-between;margin:2px 0}
+    </style></head><body>
+      <div class="c b" style="font-size:15px">${settings?.pharmacyName || 'PHARMATRACK'}</div>
+      <div class="c" style="font-size:9px;margin-bottom:10px">${settings?.address || ''}</div>
+      <div class="div"></div>
+      <div class="row"><span>Date:</span><span>${label}</span></div>
+      <div class="row"><span>Receipt #:</span><span class="b">${(r.id || '').slice(-12).toUpperCase()}</span></div>
+      <div class="row"><span>Customer:</span><span>${r.customerName || 'Walk-in'}</span></div>
+      <div class="row"><span>Cashier:</span><span>${r.processedByName || 'System'}</span></div>
+      <div class="div"></div>
+      ${items.map(it => `<div class="row"><span>${it.name} x${it.quantity}</span><span>${fm(it.subtotal || it.price * it.quantity)}</span></div>`).join('')}
+      <div class="div"></div>
+      <div class="row"><span>Subtotal:</span><span>${fm(r.total || 0)}</span></div>
+      <div class="row"><span>VAT (12%):</span><span>${fm(r.tax || 0)}</span></div>
+      <div class="row b"><span>GRAND TOTAL:</span><span>${fm(grand)}</span></div>
+      <div class="div"></div>
+      <div class="row"><span>Cash Received:</span><span>${fm(r.amountReceived || 0)}</span></div>
+      <div class="row b"><span>Change:</span><span>${fm(r.change || 0)}</span></div>
+      <div class="div"></div>
+      <div class="c" style="margin-top:12px;font-size:9px">THANK YOU FOR YOUR PURCHASE!</div>
+    </body></html>`;
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    iframe.contentWindow.focus();
+    setTimeout(() => { iframe.contentWindow.print(); document.body.removeChild(iframe); }, 400);
+  };
+
+  // current receipts = those still in the main collection (shown in 'receipts' tab)
+  // archiveRows = older receipts already moved to receiptArchive
+  const archiveRows = useMemo(() => {
+    return (archivedReceipts || []).filter((receipt) => {
+      const q = archiveSearch.toLowerCase();
+      if (!q) return true;
+      const haystack = `${receipt?.id || ''} ${receipt?.customerName || ''} ${receipt?.processedByName || ''} ${(receipt?.items || []).map(item => item?.name || '').join(' ')}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [archivedReceipts, archiveSearch]);
+
+  // "current" receipts filtered by search (for the Current tab inside archive view)
+  const currentReceiptsRows = useMemo(() => {
+    return (receipts || []).filter((receipt) => {
+      const q = archiveSearch.toLowerCase();
+      if (!q) return true;
+      const haystack = `${receipt?.id || ''} ${receipt?.customerName || ''} ${receipt?.processedByName || ''} ${(receipt?.items || []).map(item => item?.name || '').join(' ')}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [receipts, archiveSearch]);
+
   const totalReceiptPages = Math.max(1, Math.ceil(filteredReceipts.length / receiptsPerPage));
   const paginatedReceipts = useMemo(() => {
     const startIndex = (receiptPage - 1) * receiptsPerPage;
@@ -506,6 +629,29 @@ export function AuditLog({ currentUser, settings }) {
 
   return (
     <div className="max-w-6xl mx-auto">
+      {selectedBatch && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[70] backdrop-blur-sm">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Archived Batch Details</h3>
+                <p className="text-sm text-gray-500">{selectedBatch.medicine?.name || 'Medicine'} • {selectedBatch.batch?.batchNumber || 'N/A'}</p>
+              </div>
+              <button onClick={() => setSelectedBatch(null)} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="grid gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-3">
+                <div><p className="text-gray-400 text-xs uppercase">Batch Number</p><p className="font-semibold">{selectedBatch.batch?.batchNumber || 'N/A'}</p></div>
+                <div><p className="text-gray-400 text-xs uppercase">Expiry</p><p className="font-semibold">{selectedBatch.batch?.expiryDate || 'N/A'}</p></div>
+                <div><p className="text-gray-400 text-xs uppercase">Quantity</p><p className="font-semibold">{selectedBatch.batch?.quantity || 0}</p></div>
+                <div><p className="text-gray-400 text-xs uppercase">Reason</p><p className="font-semibold">{selectedBatch.batch?.archiveReason || 'Manual'}</p></div>
+                <div><p className="text-gray-400 text-xs uppercase">Supplier</p><p className="font-semibold">{selectedBatch.batch?.supplier || 'N/A'}</p></div>
+                <div><p className="text-gray-400 text-xs uppercase">Archived On</p><p className="font-semibold">{selectedBatch.batch?.archivedAt ? new Date(selectedBatch.batch.archivedAt).toLocaleString() : 'N/A'}</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="mb-8 flex justify-between items-end">
         <div>
@@ -537,6 +683,16 @@ export function AuditLog({ currentUser, settings }) {
               }`}
             >
               Receipts
+            </button>
+            <button
+              onClick={() => setViewMode('archive')}
+              className={`px-4 py-2 rounded-lg font-black text-xs uppercase tracking-widest transition-all ${
+                viewMode === 'archive' 
+                  ? 'bg-amber-600 text-white shadow-md' 
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              Archive
             </button>
           </div>
           <button
@@ -629,7 +785,220 @@ export function AuditLog({ currentUser, settings }) {
         </div>
       </div>
 
-      {viewMode === 'audit' ? (
+      {viewMode === 'archive' ? (
+        <div className="space-y-6">
+          {/* Auto-archive controls */}
+          <div className="bg-white rounded-2xl border-2 border-amber-100 p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                  <Archive className="w-4 h-4 text-amber-600" />
+                  Auto-Archive
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  When enabled, receipts older than the retention period are automatically moved to the archive.
+                </p>
+              </div>
+              <div className="flex items-center gap-4 flex-wrap">
+                {/* Retention period selector — always visible so the user can configure before enabling */}
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span className="text-xs font-semibold text-amber-800 whitespace-nowrap">Archive after</span>
+                  <select
+                    value={archivePeriodMonths}
+                    onChange={(e) => setArchivePeriodMonths(Number(e.target.value))}
+                    className="text-sm font-bold text-amber-900 bg-transparent border-none focus:outline-none cursor-pointer"
+                  >
+                    {[1, 2, 3, 6, 12].map(m => (
+                      <option key={m} value={m}>{m} {m === 1 ? 'month' : 'months'}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Toggle switch */}
+                <button
+                  onClick={() => {
+                    const next = !autoArchiveEnabled;
+                    setAutoArchiveEnabled(next);
+                    if (next) {
+                      // Run immediately when turned on
+                      runAutoArchive();
+                    }
+                  }}
+                  disabled={autoArchiving}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none disabled:opacity-60 ${
+                    autoArchiveEnabled ? 'bg-amber-500' : 'bg-gray-200'
+                  }`}
+                  title={autoArchiveEnabled ? 'Auto-archive is ON — click to disable' : 'Click to enable auto-archive'}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                      autoArchiveEnabled ? 'translate-x-8' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+                <span className={`text-xs font-bold ${autoArchiveEnabled ? 'text-amber-700' : 'text-gray-400'}`}>
+                  {autoArchiving ? 'Archiving…' : autoArchiveEnabled ? 'ON' : 'OFF'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Current / Archived sub-tabs */}
+          <div className="bg-white rounded-2xl border-2 border-gray-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b bg-gray-50/50 flex-wrap">
+              <div className="inline-flex rounded-xl border overflow-hidden shadow-sm">
+                <button
+                  onClick={() => { setArchiveFilter('current'); setArchiveSearch(''); }}
+                  className={`px-5 py-2.5 text-sm font-bold transition-colors ${archiveFilter === 'current' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Current Receipts
+                  <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${archiveFilter === 'current' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                    {receipts.length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setArchiveFilter('archived'); setArchiveSearch(''); if (!archivedReceipts.length) loadArchivedReceipts(); }}
+                  className={`px-5 py-2.5 text-sm font-bold border-l transition-colors ${archiveFilter === 'archived' ? 'bg-amber-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Archived Receipts
+                  <span className={`ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${archiveFilter === 'archived' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                    {archivedReceipts.length}
+                  </span>
+                </button>
+              </div>
+              <div className="relative flex-1 min-w-[240px] max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder={archiveFilter === 'current' ? 'Search current receipts…' : 'Search archived receipts…'}
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+            </div>
+
+            {/* Current Receipts tab */}
+            {archiveFilter === 'current' && (
+              <div>
+                {loading ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">Loading…</div>
+                ) : currentReceiptsRows.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <FileText className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                    <p className="text-gray-400 font-medium">No current receipts found.</p>
+                    <p className="text-xs text-gray-400 mt-1">Completed sales appear here. Receipts older than {archivePeriodMonths} month{archivePeriodMonths !== 1 ? 's' : ''} can be archived.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Receipt No.</th>
+                          <th className="px-4 py-3 text-left">Date</th>
+                          <th className="px-4 py-3 text-left">Staff</th>
+                          <th className="px-4 py-3 text-right">Items</th>
+                          <th className="px-4 py-3 text-right">Total</th>
+                          <th className="px-4 py-3 text-right">Payment</th>
+                          <th className="px-4 py-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {currentReceiptsRows.slice(0, 50).map((r) => {
+                          const ts = r.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp || Date.now());
+                          const isToday = ts.toDateString() === new Date().toDateString();
+                          return (
+                            <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">R-{(r.id || '').slice(-5).toUpperCase()}</td>
+                              <td className="px-4 py-3 text-gray-700">
+                                <div>{ts.toLocaleDateString()}</div>
+                                {isToday && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">Today</span>}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600">{r.processedByName || 'System'}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{(r.items || []).length}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatMoney(r.grandTotal || r.total || 0)}</td>
+                              <td className="px-4 py-3 text-right text-gray-500">{formatMoney(r.amountReceived || 0)}</td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => setSelectedReceipt(r)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 text-xs font-semibold hover:bg-blue-100 transition-colors ml-auto"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Archived Receipts tab */}
+            {archiveFilter === 'archived' && (
+              <div>
+                {loading ? (
+                  <div className="p-12 text-center text-gray-400 text-sm">Loading…</div>
+                ) : archiveRows.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <Archive className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                    <p className="text-gray-400 font-medium">No archived receipts yet.</p>
+                    <p className="text-xs text-gray-400 mt-1">Run auto-archive to move receipts older than {archivePeriodMonths} month{archivePeriodMonths !== 1 ? 's' : ''} here.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-amber-50/50 text-gray-500 text-xs uppercase tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Receipt No.</th>
+                          <th className="px-4 py-3 text-left">Date</th>
+                          <th className="px-4 py-3 text-left">Staff</th>
+                          <th className="px-4 py-3 text-right">Items</th>
+                          <th className="px-4 py-3 text-right">Total</th>
+                          <th className="px-4 py-3 text-right">Payment</th>
+                          <th className="px-4 py-3 text-left">Archived On</th>
+                          <th className="px-4 py-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {archiveRows.map((r) => {
+                          const ts = r.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp || Date.now());
+                          const archivedAt = r.archivedAt || r.deletedAt;
+                          return (
+                            <tr key={r.id} className="hover:bg-amber-50/30 transition-colors">
+                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">R-{(r.id || '').slice(-5).toUpperCase()}</td>
+                              <td className="px-4 py-3 text-gray-700">{ts.toLocaleDateString()}</td>
+                              <td className="px-4 py-3 text-gray-600">{r.processedByName || 'System'}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{(r.items || []).length}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatMoney(r.grandTotal || r.total || 0)}</td>
+                              <td className="px-4 py-3 text-right text-gray-500">{formatMoney(r.amountReceived || 0)}</td>
+                              <td className="px-4 py-3 text-xs text-amber-700">
+                                <span className="bg-amber-100 px-2 py-0.5 rounded-full font-semibold">
+                                  {archivedAt ? new Date(archivedAt).toLocaleDateString() : '—'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => setSelectedReceipt(r)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 text-xs font-semibold hover:bg-amber-100 transition-colors ml-auto"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : viewMode === 'audit' ? (
         /* Audit Sessions List */
         <div className="space-y-4">
           {sessions.length === 0 ? (
@@ -980,6 +1349,116 @@ export function AuditLog({ currentUser, settings }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Receipt Detail View Modal */}
+      {selectedReceipt && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[80] backdrop-blur-sm"
+          onClick={() => setSelectedReceipt(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50/50 flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">
+                  Receipt #{(selectedReceipt.id || '').slice(-8).toUpperCase()}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedReceipt.timestamp?.toDate
+                    ? selectedReceipt.timestamp.toDate().toLocaleString('en-PH')
+                    : new Date(selectedReceipt.timestamp || Date.now()).toLocaleString('en-PH')}
+                  {' · '}
+                  {selectedReceipt.processedByName || 'System'}
+                  {(selectedReceipt.archivedAt || selectedReceipt.deletedAt) && (
+                    <span className="ml-2 bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold">Archived</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => printReceiptFromArchive(selectedReceipt)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </button>
+                <button onClick={() => setSelectedReceipt(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-5">
+              {/* Customer info */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Customer</p>
+                  <p className="font-semibold text-gray-800">{selectedReceipt.customerName || 'Walk-in'}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Cashier</p>
+                  <p className="font-semibold text-gray-800">{selectedReceipt.processedByName || 'System'}</p>
+                </div>
+              </div>
+
+              {/* Items table */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Items</p>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Medicine / Brand</th>
+                        <th className="px-3 py-2 text-center">Qty</th>
+                        <th className="px-3 py-2 text-right">Unit Price</th>
+                        <th className="px-3 py-2 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(selectedReceipt.items || []).map((it, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50/50">
+                          <td className="px-3 py-2.5 font-medium text-gray-900">{it.name}</td>
+                          <td className="px-3 py-2.5 text-center text-gray-600">{it.quantity}{it.extraPieces > 0 ? ` +${it.extraPieces}` : ''}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600">{formatMoney(it.price || 0)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold text-gray-900">{formatMoney(it.subtotal || (it.price * it.quantity) || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal</span>
+                  <span>{formatMoney(selectedReceipt.total || 0)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>VAT (12%)</span>
+                  <span>{formatMoney(selectedReceipt.tax || 0)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-gray-900 text-base border-t pt-2 mt-1">
+                  <span>Grand Total</span>
+                  <span>{formatMoney(selectedReceipt.grandTotal || selectedReceipt.total || 0)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 border-t pt-2">
+                  <span>Cash Received</span>
+                  <span className="font-semibold">{formatMoney(selectedReceipt.amountReceived || 0)}</span>
+                </div>
+                <div className="flex justify-between text-emerald-700 font-bold">
+                  <span>Change</span>
+                  <span>{formatMoney(selectedReceipt.change || 0)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

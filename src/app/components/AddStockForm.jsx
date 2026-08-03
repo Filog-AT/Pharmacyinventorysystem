@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Calculator } from 'lucide-react';
+import { X, Calculator, AlertCircle } from 'lucide-react';
 import * as addStockBackend from '@/backend/addStockBackend';
 
 export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }) {
@@ -16,6 +16,7 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
 
   const [totalUnits, setTotalUnits] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const selectedMedicine = medicines.find(m => m.id === formData.medicineId);
   const isBottle = addStockBackend.isBottle(selectedMedicine);
@@ -56,9 +57,10 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
     e.preventDefault();
     const error = addStockBackend.validateFormData(formData);
     if (error) {
-      alert(error);
+      setFormError(error);
       return;
     }
+    setFormError('');
     
     // Convert string inputs to numbers where appropriate
     const boxes = Number(formData.boxesReceived || 0);
@@ -122,6 +124,12 @@ export function AddStockForm({ medicines, onSubmit, onClose, initialMedicineId }
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {formError && (
+            <div className="bg-red-50 border border-red-200 p-3 rounded-lg flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-red-800 font-medium">{formError}</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label htmlFor="medicineId" className="block text-sm font-medium mb-1">

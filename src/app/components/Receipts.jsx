@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, ShoppingCart, X, Minus, Plus } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { toast } from 'sonner';
 import { auditService } from '@/services/auditService';
 import { medicineService } from '@/services/medicineService';
 import * as salesBackend from '@/backend/salesBackend';
@@ -173,7 +174,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
       }
     } catch (error) {
       console.error('[Receipts] Checkout error:', error);
-      alert(`Error processing sale: ${error.message}`);
+      toast.error(`Error processing sale: ${error.message}`);
     } finally {
       setProcessing(false);
     }
@@ -565,11 +566,9 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
             onClick={async () => {
               const svc = await loadReceiptService();
               if (svc) {
-                const ok = confirm('Clear all receipts?');
-                if (ok) {
-                  await svc.clearAllReceipts();
-                  setReceipts([]);
-                }
+                if (!window.confirm('Clear all receipts?')) return;
+                await svc.clearAllReceipts();
+                setReceipts([]);
               }
             }}
             className="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
@@ -579,7 +578,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           <button
             onClick={() => {
               if (!Array.isArray(receipts) || receipts.length === 0) {
-                alert('No receipts to download');
+                toast.error('No receipts to download');
                 return;
               }
               const csv = receiptsBackend.generateReceiptsCSV(receipts);

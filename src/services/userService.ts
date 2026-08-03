@@ -17,6 +17,7 @@ import {
   sendEmailVerification,
   User as FirebaseUser
 } from 'firebase/auth';
+import { init, send } from '@emailjs/browser';
 import { auth, db } from '@/config/firebase';
 
 export interface UserProfile {
@@ -34,11 +35,20 @@ const PHARMACIES_COLLECTION = 'pharmacies';
 const VERIFICATIONS_COLLECTION = 'email_verifications';
 
 // RECOMMENDATION: Use EmailJS for frontend email sending without a backend.
-// To make this work, you need to sign up at emailjs.com and get these keys:
 const EMAILJS_CONFIG = {
   SERVICE_ID: 'service_xytsd2q', 
   TEMPLATE_ID: 'template_cb4p5pv', 
   PUBLIC_KEY: 'YPef5l8Z5FtDmdRut', 
+};
+
+let emailjsInitialized = false;
+
+const ensureEmailJsReady = () => {
+  if (emailjsInitialized) return;
+  if (EMAILJS_CONFIG.PUBLIC_KEY && EMAILJS_CONFIG.PUBLIC_KEY !== 'your_public_key') {
+    init(EMAILJS_CONFIG.PUBLIC_KEY);
+    emailjsInitialized = true;
+  }
 };
 
 export const userService = {
@@ -84,31 +94,21 @@ export const userService = {
         verified: false
       });
 
-      // ATTEMPT TO SEND REAL EMAIL (If config is provided)
-      if (EMAILJS_CONFIG.PUBLIC_KEY && EMAILJS_CONFIG.PUBLIC_KEY !== 'your_public_key') {
-        try {
-          // Dynamically import emailjs functions
-          const { send, init } = await import('@emailjs/browser');
-          
-          // Use init() to ensure the public key is set globally for this call
-          init(EMAILJS_CONFIG.PUBLIC_KEY);
-          
-          // Try sending using the send method
-          const response = await send(
-            EMAILJS_CONFIG.SERVICE_ID,
-            EMAILJS_CONFIG.TEMPLATE_ID,
-            {
-              to_email: cleanEmail,
-              verification_code: code,
-              app_name: 'PharmaTrack'
-            }
-          );
-          
-          console.log('[UserService] Real email sent successfully');
-        } catch (emailError: any) {
-          console.error('[UserService] Failed to send real email');
-          // We don't throw here so the user can still see the code in console for demo/dev
-        }
+      // Attempt to send a real verification email via EmailJS.
+      try {
+        ensureEmailJsReady();
+        await send(
+          EMAILJS_CONFIG.SERVICE_ID,
+          EMAILJS_CONFIG.TEMPLATE_ID,
+          {
+            to_email: cleanEmail,
+            verification_code: code,
+            app_name: 'PharmaTrack'
+          }
+        );
+        console.log('[UserService] Verification email sent successfully');
+      } catch (emailError: any) {
+        console.warn('[UserService] EmailJS send failed, but verification code was stored locally.', emailError);
       }
     } catch (error) {
       console.error('[UserService] Error sending verification code:', error);
