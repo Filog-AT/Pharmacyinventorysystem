@@ -1003,10 +1003,7 @@ export function Inventory({
                                 {medicine.isArchived ? (
                                   <span className="text-xs text-gray-400 italic">Brand archived</span>
                                 ) : isExpired ? (
-                                  <span className="text-xs text-red-400 italic flex items-center gap-1 justify-end">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-red-300 flex-shrink-0" />
-                                    Expired — cannot restore
-                                  </span>
+                                  <span className="text-xs text-red-400 font-semibold">Expired</span>
                                 ) : (
                                   <button
                                     onClick={() => handleRestoreArchivedBatch(medicine, batch)}

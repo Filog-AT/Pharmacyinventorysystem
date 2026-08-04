@@ -77,6 +77,34 @@ export const userService = {
     }
   },
 
+  // Validate that a pharmacy ID exists and its name matches the expected name
+  async validatePharmacyMatch(pharmacyId: string, expectedName: string): Promise<{ valid: boolean; actualName?: string }> {
+    try {
+      const docSnap = await getDoc(doc(db, PHARMACIES_COLLECTION, pharmacyId));
+      if (!docSnap.exists()) return { valid: false };
+      const actualName = (docSnap.data().name as string) || '';
+      const matches = actualName.trim().toLowerCase() === expectedName.trim().toLowerCase();
+      return { valid: matches, actualName };
+    } catch (error) {
+      console.error('[UserService] Error validating pharmacy match:', error);
+      return { valid: false };
+    }
+  },
+
+  // List all pharmacies (name + id) for the staff signup dropdown
+  async listPharmacies(): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const snap = await getDocs(collection(db, PHARMACIES_COLLECTION));
+      return snap.docs
+        .map(d => ({ id: d.id, name: (d.data().name as string) || d.id }))
+        .filter(p => p.name)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      console.error('[UserService] Error listing pharmacies:', error);
+      return [];
+    }
+  },
+
   // Send verification code to email
   async sendVerificationCode(email: string): Promise<void> {
     const cleanEmail = (email || '').trim().toLowerCase();

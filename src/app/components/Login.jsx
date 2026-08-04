@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { User, Lock, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { User, Lock, Eye, EyeOff, Mail, UserPlus, LogIn, AlertTriangle, UserCircle, ChevronDown } from 'lucide-react';
 import { userService } from '@/services/userService';
 import { toast } from 'sonner';
 import heartLogo from '../../styles/heart logo.jpg';
@@ -15,8 +15,22 @@ export function Login({ onLogin, pharmacyName }) {
   const [pharmacyIdInput, setPharmacyIdInput] = useState(''); // For staff signing up
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [verificationStep, setVerificationStep] = useState(false); // New state for verification code step
+  const [verificationStep, setVerificationStep] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
+  const [pharmacyList, setPharmacyList] = useState([]);
+  const [pharmacyListLoading, setPharmacyListLoading] = useState(false);
+  const [idMatchError, setIdMatchError] = useState(''); // inline mismatch error
+
+  // Fetch pharmacies when staff role is selected in signup mode
+  useEffect(() => {
+    if (isSignUp && role === 'staff' && pharmacyList.length === 0) {
+      setPharmacyListLoading(true);
+      userService.listPharmacies()
+        .then(list => setPharmacyList(list))
+        .catch(() => toast.error('Could not load pharmacy list'))
+        .finally(() => setPharmacyListLoading(false));
+    }
+  }, [isSignUp, role]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,6 +47,16 @@ export function Login({ onLogin, pharmacyName }) {
               setLoading(false);
               return;
             }
+            // Verify the typed ID matches the selected pharmacy name
+            const match = await userService.validatePharmacyMatch(pharmacyIdInput, pharmacyNameInput);
+            if (!match.valid) {
+              const hint = 'ID does not match pharmacy';
+              toast.error(hint);
+              setIdMatchError(hint);
+              setLoading(false);
+              return;
+            }
+            setIdMatchError('');
           }
 
           await userService.sendVerificationCode(email);
@@ -204,15 +228,7 @@ export function Login({ onLogin, pharmacyName }) {
 
             {isSignUp && (
               <>
-                {role === 'staff' && (
-                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg mb-4 flex items-start gap-2 animate-in slide-in-from-top-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
-                    <div className="text-xs text-amber-800">
-                      <strong>Staff Registration:</strong> A valid Pharmacy ID from your manager is required to join an existing pharmacy.
-                    </div>
-                  </div>
-                )}
-
+                {/* Full Name */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Full Name</label>
                   <div className="relative">
@@ -228,23 +244,51 @@ export function Login({ onLogin, pharmacyName }) {
                   </div>
                 </div>
 
+                {/* Pharmacy Name — dropdown for staff, text input for manager */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy Name</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 flex items-center justify-center">
-                      {renderHeartLogo('w-4 h-4')}
-                    </span>
-                    <input
-                      type="text"
-                      value={pharmacyNameInput}
-                      onChange={(e) => setPharmacyNameInput(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
-                      placeholder={role === 'manager' ? "e.g., PharmaTrack Pharmacy" : "The pharmacy you are joining"}
-                      required
-                    />
-                  </div>
+                  {role === 'staff' ? (
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 flex items-center justify-center pointer-events-none">
+                        {renderHeartLogo('w-4 h-4')}
+                      </span>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      <select
+                        value={pharmacyNameInput}
+                        onChange={(e) => {
+                          setPharmacyNameInput(e.target.value);
+                          setIdMatchError('');
+                        }}
+                        className="w-full pl-10 pr-8 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50 appearance-none"
+                        required
+                        disabled={pharmacyListLoading}
+                      >
+                        <option value="">
+                          {pharmacyListLoading ? 'Loading pharmacies…' : 'Select your pharmacy'}
+                        </option>
+                        {pharmacyList.map(p => (
+                          <option key={p.id} value={p.name}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 flex items-center justify-center">
+                        {renderHeartLogo('w-4 h-4')}
+                      </span>
+                      <input
+                        type="text"
+                        value={pharmacyNameInput}
+                        onChange={(e) => setPharmacyNameInput(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                        placeholder="e.g., PharmaTrack Pharmacy"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
 
+                {/* Email */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
                   <div className="relative">
@@ -260,12 +304,13 @@ export function Login({ onLogin, pharmacyName }) {
                   </div>
                 </div>
 
+                {/* Account Type */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Account Type</label>
                   <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
                     <button
                       type="button"
-                      onClick={() => setRole('manager')}
+                      onClick={() => { setRole('manager'); setPharmacyIdInput(''); setPharmacyNameInput(''); setIdMatchError(''); }}
                       className={`py-2 text-sm font-medium rounded-md transition-all ${
                         role === 'manager' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                       }`}
@@ -274,7 +319,7 @@ export function Login({ onLogin, pharmacyName }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setRole('staff')}
+                      onClick={() => { setRole('staff'); setPharmacyIdInput(''); setPharmacyNameInput(''); setIdMatchError(''); }}
                       className={`py-2 text-sm font-medium rounded-md transition-all ${
                         role === 'staff' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                       }`}
@@ -284,22 +329,29 @@ export function Login({ onLogin, pharmacyName }) {
                   </div>
                 </div>
 
+                {/* Pharmacy ID — typed by staff, validated against selected pharmacy name */}
                 {role === 'staff' && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Pharmacy ID</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 flex items-center justify-center">
-                        {renderHeartLogo('w-4 h-4')}
-                      </span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-mono select-none">#</span>
                       <input
                         type="text"
                         value={pharmacyIdInput}
-                        onChange={(e) => setPharmacyIdInput(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
-                        placeholder="Paste Pharmacy ID from manager"
-                        required={role === 'staff'}
+                        onChange={(e) => { setPharmacyIdInput(e.target.value); setIdMatchError(''); }}
+                        className={`w-full pl-7 pr-4 py-2.5 border rounded-lg focus:ring-2 font-mono text-sm bg-gray-50/50 ${
+                          idMatchError ? 'border-red-400 focus:ring-red-400' : 'focus:ring-blue-500'
+                        }`}
+                        placeholder="Paste pharmacy ID"
+                        required
                       />
                     </div>
+                    {idMatchError && (
+                      <p className="mt-1 text-[11px] text-red-600 font-semibold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                        {idMatchError}
+                      </p>
+                    )}
                   </div>
                 )}
               </>
