@@ -288,7 +288,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
   const downloadAllReceiptsCSV = () => {
     if (filteredReceipts.length === 0) return;
     
-    const headers = ['Receipt ID', 'Date', 'Customer', 'Staff', 'Items', 'Total Amount', 'Amount Received', 'Change'];
+    const headers = ['Invoice #', 'Date', 'Customer', 'Staff', 'Items', 'Total Amount', 'Amount Received', 'Change'];
     const rows = filteredReceipts.map(r => {
       const ts = r.timestamp?.toDate ? r.timestamp.toDate() : new Date(r.timestamp);
       const itemsStr = r.items?.map(it => `${it.name}(x${it.quantity})`).join('; ');
@@ -373,7 +373,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
           <div class="divider"></div>
           
           <div class="flex"><span>Date:</span> <span>${label}</span></div>
-          <div class="flex"><span>Receipt #:</span> <span class="bold">${r.id?.slice(-12).toUpperCase() || 'N/A'}</span></div>
+          <div class="flex"><span>Invoice #:</span> <span class="bold">${r.invoiceNumber || ('INV-' + (r.id?.slice(-8).toUpperCase() || 'N/A'))}</span></div>
           <div class="flex"><span>Customer:</span> <span>${r.customerName || 'Walk-in'}</span></div>
           <div class="flex"><span>Cashier:</span> <span>${r.processedByName || 'System'}</span></div>
           
@@ -469,7 +469,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
     ]);
 
     const info = [
-      ['Receipt ID', r.id],
+      ['Invoice #', r.invoiceNumber || r.id],
       ['Date', ts.toLocaleString()],
       ['Customer', r.customerName || 'Walk-in'],
       ['Processed By', r.processedByName || 'System'],
@@ -487,7 +487,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt-${r.id}.csv`;
+    a.download = `invoice-${r.invoiceNumber || r.id}.csv`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -565,7 +565,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
       <div class="c" style="font-size:9px;margin-bottom:10px">${settings?.address || ''}</div>
       <div class="div"></div>
       <div class="row"><span>Date:</span><span>${label}</span></div>
-      <div class="row"><span>Receipt #:</span><span class="b">${(r.id || '').slice(-12).toUpperCase()}</span></div>
+      <div class="row"><span>Invoice #:</span><span class="b">${r.invoiceNumber || ('INV-' + (r.id || '').slice(-8).toUpperCase())}</span></div>
       <div class="row"><span>Customer:</span><span>${r.customerName || 'Walk-in'}</span></div>
       <div class="row"><span>Cashier:</span><span>${r.processedByName || 'System'}</span></div>
       <div class="div"></div>
@@ -900,7 +900,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
                     <table className="min-w-full text-sm">
                       <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                         <tr>
-                          <th className="px-4 py-3 text-left">Receipt No.</th>
+                          <th className="px-4 py-3 text-left">Invoice #.</th>
                           <th className="px-4 py-3 text-left">Date</th>
                           <th className="px-4 py-3 text-left">Staff</th>
                           <th className="px-4 py-3 text-right">Items</th>
@@ -915,7 +915,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
                           const isToday = ts.toDateString() === new Date().toDateString();
                           return (
                             <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
-                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">R-{(r.id || '').slice(-5).toUpperCase()}</td>
+                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">{r.invoiceNumber || ('INV-' + (r.id || '').slice(-8).toUpperCase())}</td>
                               <td className="px-4 py-3 text-gray-700">
                                 <div>{ts.toLocaleDateString()}</div>
                                 {isToday && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold">Today</span>}
@@ -959,7 +959,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
                     <table className="min-w-full text-sm">
                       <thead className="bg-amber-50/50 text-gray-500 text-xs uppercase tracking-wider">
                         <tr>
-                          <th className="px-4 py-3 text-left">Receipt No.</th>
+                          <th className="px-4 py-3 text-left">Invoice #.</th>
                           <th className="px-4 py-3 text-left">Date</th>
                           <th className="px-4 py-3 text-left">Staff</th>
                           <th className="px-4 py-3 text-right">Items</th>
@@ -975,7 +975,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
                           const archivedAt = r.archivedAt || r.deletedAt;
                           return (
                             <tr key={r.id} className="hover:bg-amber-50/30 transition-colors">
-                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">R-{(r.id || '').slice(-5).toUpperCase()}</td>
+                              <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">{r.invoiceNumber || ('INV-' + (r.id || '').slice(-8).toUpperCase())}</td>
                               <td className="px-4 py-3 text-gray-700">{ts.toLocaleDateString()}</td>
                               <td className="px-4 py-3 text-gray-600">{r.processedByName || 'System'}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{(r.items || []).length}</td>
@@ -1374,7 +1374,7 @@ export function AuditLog({ currentUser, settings, medicines = [], onArchiveBatch
             <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50/50 flex-shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">
-                  Receipt #{(selectedReceipt.id || '').slice(-8).toUpperCase()}
+                  Invoice #{selectedReceipt.invoiceNumber || ('INV-' + (selectedReceipt.id || '').slice(-8).toUpperCase())}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {selectedReceipt.timestamp?.toDate

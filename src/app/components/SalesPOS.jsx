@@ -272,8 +272,8 @@ export function SalesPOS({ medicines, currentUser, settings }) {
         processedByName: currentUser.name || currentUser.username || 'System'
       };
 
-      const receiptId = await receiptService.addReceipt(currentUser.pharmacyId, receiptData);
-      const finalReceipt = { ...receiptData, id: receiptId };
+      const { id: receiptId, invoiceNumber } = await receiptService.addReceipt(currentUser.pharmacyId, receiptData);
+      const finalReceipt = { ...receiptData, id: receiptId, invoiceNumber };
 
       // Log sale completion to audit trail
       await auditService.logAction(currentUser.pharmacyId, {
@@ -376,7 +376,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
           <div class="divider"></div>
           
           <div class="flex"><span>Date:</span> <span>${label}</span></div>
-          <div class="flex"><span>Receipt #:</span> <span class="bold">${r.id?.slice(-12).toUpperCase() || 'N/A'}</span></div>
+          <div class="flex"><span>Invoice #:</span> <span class="bold">${r.invoiceNumber || ('INV-' + (r.id?.slice(-8).toUpperCase() || 'N/A'))}</span></div>
           <div class="flex"><span>Customer:</span> <span>${r.customerName || 'Walk-in'}</span></div>
           <div class="flex"><span>Cashier:</span> <span>${r.processedByName || 'System'}</span></div>
           
@@ -443,7 +443,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
           
           <div class="center qr-placeholder">
             [ SYSTEM GENERATED TRANSACTION ]<br>
-            ${r.id}
+            ${r.invoiceNumber || r.id}
           </div>
         </body>
       </html>
@@ -476,7 +476,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
       y += 40;
       doc.setFontSize(10);
       doc.text(`Date: ${ts.toLocaleString()}`, 40, y);
-      doc.text(`Receipt ID: ${r.id}`, 40, y + 15);
+      doc.text(`Invoice #: ${r.invoiceNumber || ('INV-' + (r.id?.slice(-8) || ''))}`, 40, y + 15);
       doc.text(`Customer: ${r.customerName || 'Walk-in'}`, 40, y + 30);
       
       y += 60;
@@ -532,7 +532,7 @@ export function SalesPOS({ medicines, currentUser, settings }) {
       doc.text('Thank you for your purchase!', 300, y, { align: 'center' });
       doc.text(`Processed by: ${r.processedByName || 'System'}`, 300, y + 15, { align: 'center' });
       
-      doc.save(`Receipt_${r.id?.slice(-8)}.pdf`);
+      doc.save(`Invoice_${r.invoiceNumber || r.id?.slice(-8)}.pdf`);
     } catch (err) {
       console.error('PDF generation error:', err);
       toast.error('Error generating PDF');
@@ -542,13 +542,13 @@ export function SalesPOS({ medicines, currentUser, settings }) {
   const handleDownloadAllCSV = () => {
     if (receipts.length === 0) return;
     
-    const headers = ['Date', 'Receipt ID', 'Customer', 'Items', 'Subtotal', 'VAT', 'Total', 'Payment Method'];
+    const headers = ['Date', 'Invoice #', 'Customer', 'Items', 'Subtotal', 'VAT', 'Total', 'Payment Method'];
     const rows = receipts.map(r => {
       const ts = r?.timestamp && typeof r.timestamp.toDate === 'function' ? r.timestamp.toDate() : new Date(r.timestamp);
       const itemsList = Array.isArray(r.items) ? r.items.map(it => `${it.name} (x${it.quantity})`).join('; ') : '';
       return [
         ts.toLocaleString(),
-        r.id,
+        r.invoiceNumber || r.id,
         r.customerName || 'Walk-in',
         `"${itemsList}"`,
         r.total || 0,

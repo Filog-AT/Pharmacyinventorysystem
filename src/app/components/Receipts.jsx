@@ -138,7 +138,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
           userId: currentUser?.uid || 'unknown',
           userName: currentUser?.name || 'Unknown User',
         };
-        const receiptId = await svc.addReceipt(currentUser.pharmacyId, payload);
+        const { id: receiptId, invoiceNumber: receiptInvoiceNumber } = await svc.addReceipt(currentUser.pharmacyId, payload);
         
         // Log general sale completion
         await auditService.logAction(currentUser.pharmacyId, {
@@ -162,7 +162,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
 
         const data = await svc.getReceipts(currentUser.pharmacyId, 100);
         setReceipts(data);
-        const createdReceipt = { id: receiptId, ...payload };
+        const createdReceipt = { id: receiptId, invoiceNumber: receiptInvoiceNumber, ...payload };
         try { await medicineService.getMedicines(currentUser.pharmacyId); } catch {}
         try { window.dispatchEvent(new Event('refresh-medicines')); } catch {}
         try { window.dispatchEvent(new Event('refresh-receipts')); } catch {}
@@ -234,7 +234,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     doc.text('Customer Invoice', 40, y);
     y += 22;
     doc.setFontSize(12);
-    doc.text(`Invoice ${r.id ? '#'+r.id : ''}`, 40, y);
+    doc.text(`Invoice #: ${r.invoiceNumber || ('INV-' + (r.id || ''))}`, 40, y);
     y += 16;
     doc.text(`Date: ${ts.toLocaleString()}`, 40, y);
     y += 16;
@@ -301,7 +301,7 @@ export function Receipts({ medicines, currentUser, onUpdateMedicine }) {
     y += 24;
     doc.setFontSize(10);
     doc.text(`Cashier: ${r.userName || 'Unknown'}`, 40, y);
-    const filename = `receipt-${r.id || safeTs}.pdf`;
+    const filename = `invoice-${r.invoiceNumber || r.id || safeTs}.pdf`;
     doc.save(filename);
   };
   const buildCurrentSaleReceipt = () => {

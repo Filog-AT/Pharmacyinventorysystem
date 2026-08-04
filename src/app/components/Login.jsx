@@ -41,16 +41,22 @@ export function Login({ onLogin, pharmacyName }) {
         if (!verificationStep) {
           // STEP 1: Details Submission -> Send Code
           if (role === 'staff') {
-            const exists = await userService.checkPharmacyExists(pharmacyIdInput);
-            if (!exists) {
-              toast.error('Invalid Pharmacy ID. Please check with your manager.');
+            if (!pharmacyIdInput.trim()) {
+              toast.error('Please enter a Pharmacy ID.');
               setLoading(false);
               return;
             }
-            // Verify the typed ID matches the selected pharmacy name
-            const match = await userService.validatePharmacyMatch(pharmacyIdInput, pharmacyNameInput);
+            if (!pharmacyNameInput) {
+              toast.error('Please select a pharmacy name from the dropdown.');
+              setLoading(false);
+              return;
+            }
+            // Single call — checks existence AND name match together
+            const match = await userService.validatePharmacyMatch(pharmacyIdInput.trim(), pharmacyNameInput);
             if (!match.valid) {
-              const hint = 'ID does not match pharmacy';
+              const hint = match.actualName === undefined
+                ? 'Pharmacy ID not found. Please check the ID with your manager.'
+                : 'ID does not match pharmacy';
               toast.error(hint);
               setIdMatchError(hint);
               setLoading(false);

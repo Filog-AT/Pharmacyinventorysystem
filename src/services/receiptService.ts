@@ -8,6 +8,8 @@ import {
   doc,
   deleteDoc,
   setDoc,
+  runTransaction,
+  getDoc,
   where,
   Timestamp
 } from 'firebase/firestore';
@@ -24,6 +26,7 @@ export interface ReceiptItem {
 
 export interface Receipt {
   id?: string;
+  invoiceNumber?: string;
   items: ReceiptItem[];
   total: number;
   timestamp: any;
@@ -33,12 +36,10 @@ export interface Receipt {
 }
 
 export const receiptService = {
-  async addReceipt(pharmacyId: string, receiptData: Omit<Receipt, 'id'>): Promise<string> {
+  async addReceipt(pharmacyId: string, receiptData: Omit<Receipt, 'id'>): Promise<{ id: string; invoiceNumber: string }> {
     if (!pharmacyId) throw new Error('Pharmacy ID is required');
     try {
-      // Respect provided timestamp if available, otherwise use now
       let finalTimestamp = Timestamp.now();
-      
       if (receiptData.timestamp) {
         if (receiptData.timestamp instanceof Date) {
           finalTimestamp = Timestamp.fromDate(receiptData.timestamp);
@@ -48,12 +49,36 @@ export const receiptService = {
           finalTimestamp = Timestamp.fromDate(new Date(receiptData.timestamp));
         }
       }
-      
+
+      // Generate sequential invoice number: INV-YYYYMMDD-XXXX
+      const now = finalTimestamp.toDate();
+      const datePart = now.getFullYear().toString() +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0');
+      const counterRef = doc(db, 'pharmacies', pharmacyId, 'counters', `invoices_${datePart}`);
+
+      let seq = 1;
+      try {
+        seq = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(counterRef);
+          const next = snap.exists() ? (snap.data().seq as number) + 1 : 1;
+          tx.set(counterRef, { seq: next });
+          return next;
+        });
+      } catch {
+        // Fallback: use timestamp millis last 4 digits if transaction fails
+        seq = now.getMilliseconds() % 10000 || 1;
+      }
+
+      const invoiceNumber = `INV-${datePart}-${String(seq).padStart(4, '0')}`;
+
       const docRef = await addDoc(collection(db, 'pharmacies', pharmacyId, 'receipts'), {
         ...receiptData,
+        invoiceNumber,
         timestamp: finalTimestamp,
       });
-      return docRef.id;
+      // Return both the document ID and the generated invoice number
+      return { id: docRef.id, invoiceNumber };
     } catch (error) {
       console.error('Error adding receipt:', error);
       throw error;
