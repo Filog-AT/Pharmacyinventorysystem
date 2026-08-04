@@ -291,6 +291,8 @@ export function Inventory({
         archivedBatches: updatedArchivedBatches,
         batches: updatedActiveBatches,
         totalQuantity: updatedActiveBatches.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        pharmacyId: medicine.pharmacyId,
+        categoryId: medicine.categoryId,
       });
       toast.success(`${medicine.name} restored successfully`);
     } catch (error) {

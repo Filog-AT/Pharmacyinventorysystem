@@ -243,15 +243,46 @@ export const medicineService = {
   },
 
   // Update a medicine — automatically replaces `undefined` values with deleteField()
-  // so Firestore doesn't reject the payload.
+  // so Firestore doesn't reject the payload. Also deep-strips undefined from nested
+  // arrays (batches) where deleteField() is not valid.
   async updateMedicine(pharmacyId: string, categoryId: string, id: string, medicineData: Partial<Medicine>): Promise<void> {
     try {
       const medicineRef = this.getMedicineRef(pharmacyId, categoryId, id);
-      // Replace any undefined values with deleteField() sentinel
+
+      // Sanitize a value for Firestore: convert Timestamps to ISO strings, strip undefined
+      const sanitizeValue = (v: any): any => {
+        if (v === undefined) return undefined; // handled by caller
+        if (v === null) return null;
+        // Firestore Timestamp — convert to ISO string so it round-trips safely
+        if (v !== null && typeof v === 'object' && typeof v.toDate === 'function') {
+          return v.toDate().toISOString();
+        }
+        if (Array.isArray(v)) {
+          return v.map(item => {
+            if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+              const cleaned: Record<string, any> = {};
+              for (const [ek, ev] of Object.entries(item)) {
+                const sv = sanitizeValue(ev);
+                if (sv !== undefined) cleaned[ek] = sv;
+              }
+              return cleaned;
+            }
+            return item;
+          });
+        }
+        return v;
+      };
+
+      // Top-level: undefined → deleteField() | arrays → deep-clean | everything else → pass through
       const sanitized: Record<string, any> = {};
       for (const [k, v] of Object.entries(medicineData as Record<string, any>)) {
-        sanitized[k] = v === undefined ? deleteField() : v;
+        if (v === undefined) {
+          sanitized[k] = deleteField();
+        } else {
+          sanitized[k] = sanitizeValue(v);
+        }
       }
+
       await updateDoc(medicineRef, sanitized);
     } catch (error) {
       console.error('Error updating medicine:', error);

@@ -672,13 +672,11 @@ function AppSimple() {
         action: isPriceUpdate ? 'UPDATE_PRICE' : 'UPDATE',
         entityType: 'medicine',
         entityName: medicine.name,
-        details: { 
-          id, 
-          ...medicineData,
-          priceChanged: isPriceUpdate,
-          oldPrice,
-          newPrice
-        }
+        details: Object.fromEntries(
+          Object.entries({ id, ...medicineData, priceChanged: isPriceUpdate, oldPrice, newPrice })
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [k, Array.isArray(v) ? '(array)' : (typeof v === 'object' && v !== null && typeof (v as any).toDate === 'function' ? (v as any).toDate().toISOString() : v)])
+        )
       });
 
       return true;
@@ -751,18 +749,40 @@ function AppSimple() {
         const medicine = medicines.find((m: any) => m.id === id);
         if (!medicine) throw new Error('Medicine not found');
 
-        const restoredBatches = (medicine.archivedBatches || []).map((batch: any) => ({
-          ...batch,
-          isArchived: false,
-          archivedAt: undefined,
-          archiveReason: undefined,
-          quantity: Number(batch.quantity || 0) > 0 ? Number(batch.quantity || 0) : 0,
-        }));
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Only restore non-expired batches that were archived when the brand was deleted
+        const batchesToRestore = (medicine.archivedBatches || []).filter((batch: any) => {
+          if (batch.archiveReason !== 'Brand deleted') return false;
+          if (!batch.expiryDate) return true;
+          const exp = new Date(batch.expiryDate);
+          exp.setHours(0, 0, 0, 0);
+          return exp >= today;
+        });
+
+        const batchesToKeepArchived = (medicine.archivedBatches || []).filter((batch: any) => {
+          if (batch.archiveReason !== 'Brand deleted') return true;
+          if (!batch.expiryDate) return false;
+          const exp = new Date(batch.expiryDate);
+          exp.setHours(0, 0, 0, 0);
+          return exp < today;
+        });
+
+        const restoredBatches = batchesToRestore.map((batch: any) => {
+          const b = { ...batch };
+          b.isArchived = false;
+          b.quantity = Number(batch.initialQuantity || batch.quantity || 0);
+          delete b.archivedAt;
+          delete b.archiveReason;
+          delete b.depletedAt;
+          return b;
+        });
 
         const restoredMedicine = {
           ...medicine,
           batches: restoredBatches,
-          archivedBatches: [],
+          archivedBatches: batchesToKeepArchived,
           totalQuantity: restoredBatches.reduce((sum: number, batch: any) => sum + Number(batch.quantity || 0), 0),
           isArchived: false,
           archivedAt: undefined,
