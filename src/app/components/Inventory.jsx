@@ -771,15 +771,7 @@ export function Inventory({
                 <p className="text-sm text-gray-500 mt-0.5">Archived brands and inactive batches — restore anytime.</p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleClearArchive}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-700 text-xs font-bold hover:bg-red-200 transition-colors border border-red-200"
-                  title="DEBUG: Clear all archive data"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear Archive (Debug)
-                </button>
-                <button onClick={() => setShowArchiveView(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <button onClick={() => setShowArchiveView(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
